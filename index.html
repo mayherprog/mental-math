@@ -23,12 +23,15 @@
    (warn, wrong) are deliberately NOT the accent.
    ============================================================ */
 :root {
-  --ground: #e8eaee;
-  --panel:  #f5f6f8;
+  /* Ground and panel are deliberately far apart: surfaces do the
+     separating, so the layout reads as blocks without extra chrome. */
+  --ground: #dfe3ea;
+  --panel:  #fcfdfe;
   --ink:    #11151c;
-  --muted:  #666e7d;
-  --rule:   #ccd1da;
+  --muted:  #626b7a;
+  --rule:   #c3cad6;
   --accent: #1f4fa8;
+  --accent-soft: #dbe4f7;
   --warn:   #8a5200;
   --wrong:  #96322a;
 
@@ -48,17 +51,20 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #101318; --panel: #171b22; --ink: #e4e8ef; --muted: #868e9d;
-    --rule: #262c36; --accent: #7ba6f5; --warn: #dfa04a; --wrong: #e08a76;
+    --ground: #0b0e12; --panel: #1a1f28; --ink: #e4e8ef; --muted: #8b93a2;
+    --rule: #2c333f; --accent: #7ba6f5; --accent-soft: #23304a;
+    --warn: #dfa04a; --wrong: #e08a76;
   }
 }
 :root[data-theme="light"] {
-  --ground: #e8eaee; --panel: #f5f6f8; --ink: #11151c; --muted: #666e7d;
-  --rule: #ccd1da; --accent: #1f4fa8; --warn: #8a5200; --wrong: #96322a;
+  --ground: #dfe3ea; --panel: #fcfdfe; --ink: #11151c; --muted: #626b7a;
+  --rule: #c3cad6; --accent: #1f4fa8; --accent-soft: #dbe4f7;
+  --warn: #8a5200; --wrong: #96322a;
 }
 :root[data-theme="dark"] {
-  --ground: #101318; --panel: #171b22; --ink: #e4e8ef; --muted: #868e9d;
-  --rule: #262c36; --accent: #7ba6f5; --warn: #dfa04a; --wrong: #e08a76;
+  --ground: #0b0e12; --panel: #1a1f28; --ink: #e4e8ef; --muted: #8b93a2;
+  --rule: #2c333f; --accent: #7ba6f5; --accent-soft: #23304a;
+  --warn: #dfa04a; --wrong: #e08a76;
 }
 
 * { box-sizing: border-box; }
@@ -158,24 +164,35 @@ body.drilling header,
 body.drilling footer { display: none; }
 body.drilling main { max-width: none; padding: 0; }
 
-/* Panels are separated by rules, not enclosed in boxes — an
-   instrument face, not a stack of cards. */
-fieldset {
-  border: none; border-top: 1px solid var(--rule); border-radius: 0;
-  background: none; padding: var(--s4) 0 var(--s5); margin: 0;
+/* Filled surfaces, not hairlines: colour is what separates regions. */
+.panel {
+  background: var(--panel); border: 1px solid var(--rule);
+  padding: var(--s4); margin: 0 0 var(--s3);
+  display: flex; flex-direction: column; gap: var(--s3);
 }
-legend {
-  font-size: var(--t-micro); color: var(--muted); padding: 0 var(--s2) 0 0;
-  text-transform: uppercase; letter-spacing: .12em;
+.panel-label {
+  font-family: var(--mono); font-size: var(--t-micro); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .12em; margin: 0;
 }
+.panel .note { margin: 0; }
+
+/* A toggle should look like a toggle, not like a button you press once. */
+.switch {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  font-size: var(--t-small); color: var(--muted); cursor: pointer;
+  user-select: none; align-self: flex-start;
+}
+.switch input { width: 1rem; height: 1rem; accent-color: var(--accent); margin: 0; }
+.switch:has(input:checked) { color: var(--ink); }
 
 .row { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field label { font-size: var(--t-small); color: var(--muted); }
+/* Inputs sit inset against the panel they live on. */
 .field input[type="number"], .field input[type="text"] {
   font-family: var(--mono); font-size: var(--t-body); width: 7rem;
   padding: var(--s2); border: 1px solid var(--rule); border-radius: 0;
-  background: var(--panel); color: var(--ink); font-variant-numeric: tabular-nums;
+  background: var(--ground); color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .field input:focus { border-color: var(--accent); outline: none; }
 
@@ -183,12 +200,13 @@ legend {
 .cats label {
   font-size: var(--t-small); cursor: pointer; border: 1px solid var(--rule);
   border-radius: 0; padding: var(--s1) var(--s3); color: var(--muted);
-  user-select: none; background: var(--panel);
+  user-select: none; background: var(--ground);
 }
 .cats input { position: absolute; opacity: 0; pointer-events: none; }
+/* Selection reads as a filled state, not a one-pixel hint. */
 .cats label:has(input:checked) {
-  border-color: var(--accent); color: var(--ink);
-  box-shadow: inset 2px 0 0 var(--accent);
+  border-color: var(--accent); color: var(--accent);
+  background: var(--accent-soft); font-weight: 600;
 }
 .cats label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -377,13 +395,12 @@ footer code { font-family: var(--mono); }
       <span class="rf-pair"><span class="rf-num" id="readyClock">8:00</span><span class="rf-lab">on the clock</span></span>
     </div>
     <div class="ready-go">
-      <button class="primary" id="btnStart" type="button">Start drill</button>
+      <button class="primary" id="btnStart" type="button">Start</button>
       <span class="note">or press <kbd>Enter</kbd></span>
     </div>
   </div>
 
-  <fieldset>
-    <legend>session</legend>
+  <div class="panel">
     <div class="row">
       <div class="field">
         <label for="optCount">questions</label>
@@ -394,25 +411,18 @@ footer code { font-family: var(--mono); }
         <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
       </div>
       <div class="field">
-        <label for="optSeed">seed <span style="opacity:.7">(blank = random)</span></label>
-        <input id="optSeed" type="text" placeholder="e.g. 42" inputmode="numeric">
+        <label for="optSeed">repeat code</label>
+        <input id="optSeed" type="text" placeholder="random" inputmode="numeric">
       </div>
     </div>
-  </fieldset>
+    <p class="note">A repeat code gives you the same questions again, so two sessions compare fairly. Leave it blank for a fresh set.</p>
+  </div>
 
-  <fieldset>
-    <legend>categories</legend>
+  <div class="panel">
+    <p class="panel-label">Practise only these</p>
     <div class="cats" id="catList"></div>
-    <p class="note">None selected uses the default weighted mix, which leans on multiplication and division — the operations that cost the most time under a clock.</p>
-  </fieldset>
-
-  <fieldset>
-    <legend>display</legend>
-    <div class="cats">
-      <label><input type="checkbox" id="optHideClock"><span>hide the countdown</span></label>
-    </div>
-    <p class="note">The clock still runs and still ends the session. This only hides it, so you can find out whether seeing it helps or stresses you.</p>
-  </fieldset>
+    <label class="switch"><input type="checkbox" id="optHideClock"><span>Hide the countdown</span></label>
+  </div>
 
   <div class="about">
     <h2>what this is</h2>
@@ -454,7 +464,7 @@ footer code { font-family: var(--mono); }
       Leave it blank to skip.
       <span class="keys"><br><kbd>Enter</kbd> submits · <kbd>Esc</kbd> stops.</span>
     </p>
-    <button class="ghost" id="btnQuit" type="button">Stop and see results</button>
+    <button class="ghost" id="btnQuit" type="button">Stop</button>
   </div>
 </section>
 
@@ -481,9 +491,7 @@ footer code { font-family: var(--mono); }
   </div>
 
   <div class="actions" style="margin-top:2rem">
-    <button class="primary" id="btnAgain" type="button">Run again</button>
-    <button class="ghost" id="btnSameSeed" type="button">Repeat this exact set</button>
-    <button class="ghost" id="btnBack" type="button">Change settings</button>
+    <button class="primary" id="btnHome" type="button">Home</button>
   </div>
   <p class="note" id="seedNote"></p>
 </section>
@@ -984,8 +992,9 @@ function renderResults(r) {
   }
 
   el.seedNote.textContent =
-    `seed ${r.seed} · ${r.completed ? "finished the set" : "stopped on the clock"}` +
-    ` · saved to this browser`;
+    `Repeat code ${r.seed} — it is already filled in on the home screen, ` +
+    `so pressing Start gives you these exact questions again. ` +
+    `Clear it for a fresh set.`;
 }
 
 function escapeHtml(s) {
@@ -1058,22 +1067,14 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-$("btnAgain").addEventListener("click", () => {
-  startWith({
-    count: state.count, seconds: state.limitSeconds,
-    seed: (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0),
-    categories: state.categories,
-  });
+/* One way back, and one place to start from. Repeating a set is done by
+   leaving the repeat code in place rather than by its own button. */
+$("btnHome").addEventListener("click", () => {
+  $("optSeed").value = state.seed;
+  refreshReadyFigure();
+  show(el.start);
+  window.scrollTo(0, 0);
 });
-
-$("btnSameSeed").addEventListener("click", () => {
-  startWith({
-    count: state.count, seconds: state.limitSeconds,
-    seed: state.seed, categories: state.categories,
-  });
-});
-
-$("btnBack").addEventListener("click", () => show(el.start));
 
 $("themeToggle").addEventListener("click", () => {
   const root = document.documentElement;
