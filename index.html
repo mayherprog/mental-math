@@ -156,8 +156,18 @@ header p { margin: 0; color: var(--muted); font-size: var(--t-small); flex: 1 1 
   color: var(--ink);
 }
 
-/* Secondary by construction: the explanation comes after the tool. */
-#aboutPanel { margin-top: var(--s5); }
+/* Demoted on purpose. The two panels above are controls and carry a
+   filled surface; this one is reading material, so it sits unfilled on
+   the ground with a muted header and a gap between them. Colour is what
+   says "this is not the same kind of thing". */
+#aboutPanel {
+  margin-top: var(--s7);
+  background: none;
+  border-color: var(--rule);
+}
+#aboutPanel > summary { color: var(--muted); }
+#aboutPanel > summary:hover { color: var(--ink); }
+#aboutPanel[open] > summary { border-bottom-color: var(--rule); }
 
 /* ---------- drilling: nothing on screen but the instrument ---------- */
 body.drilling header,
@@ -429,7 +439,7 @@ footer code { font-family: var(--mono); }
        the setting is adjustable at all. -->
   <details class="panel" id="lengthPanel">
     <summary>
-      <span class="sum-label">Length</span>
+      <span class="sum-label">Edit</span>
       <span class="sum-state" id="lengthState">80 questions · 8:00</span>
     </summary>
     <div class="panel-body">
