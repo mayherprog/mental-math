@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing is loaded from anywhere. default-src 'none' means no external
+     script, image, font, stylesheet, frame or network request can be made,
+     even if something were injected into the page. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>mental-math — timed arithmetic drill</title>
+<meta name="description" content="A timed arithmetic drill that records every answer, so improvement is measured rather than felt.">
+<style>
+/* ============================================================
+   Design tokens.
+
+   The subject is measurement under time pressure, so the page is
+   built like test equipment: monospace as the primary voice,
+   hairline rules instead of boxes, square corners, tabular
+   figures wherever digits align.
+
+   One accent, used only to mark live state. Semantic colours
+   (warn, wrong) are deliberately NOT the accent.
+   ============================================================ */
+:root {
+  --ground: #e8eaee;
+  --panel:  #f5f6f8;
+  --ink:    #11151c;
+  --muted:  #666e7d;
+  --rule:   #ccd1da;
+  --accent: #1f4fa8;
+  --warn:   #8a5200;
+  --wrong:  #96322a;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Type scale */
+  --t-micro: .6875rem;
+  --t-small: .8125rem;
+  --t-body:  .9375rem;
+  --t-lead:  1.0625rem;
+  --t-stat:  1.75rem;
+
+  /* Spacing scale */
+  --s1: .25rem; --s2: .5rem; --s3: .75rem; --s4: 1rem;
+  --s5: 1.5rem; --s6: 2rem; --s7: 3rem; --s8: 4.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #101318; --panel: #171b22; --ink: #e4e8ef; --muted: #868e9d;
+    --rule: #262c36; --accent: #7ba6f5; --warn: #dfa04a; --wrong: #e08a76;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #e8eaee; --panel: #f5f6f8; --ink: #11151c; --muted: #666e7d;
+  --rule: #ccd1da; --accent: #1f4fa8; --warn: #8a5200; --wrong: #96322a;
+}
+:root[data-theme="dark"] {
+  --ground: #101318; --panel: #171b22; --ink: #e4e8ef; --muted: #868e9d;
+  --rule: #262c36; --accent: #7ba6f5; --warn: #dfa04a; --wrong: #e08a76;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  font-variant-numeric: tabular-nums;
+}
+main { max-width: 44rem; margin: 0 auto; padding: var(--s5) var(--s4) var(--s8); }
+
+/* Prose is the exception, not the rule: sans only where sentences run. */
+p { font-family: var(--sans); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+header {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding-bottom: var(--s3); margin-bottom: var(--s5);
+  border-bottom: 1px solid var(--ink); flex-wrap: wrap;
+}
+header h1 {
+  font-size: var(--t-body); font-weight: 600; margin: 0;
+  letter-spacing: .02em; text-transform: lowercase;
+}
+header p { margin: 0; color: var(--muted); font-size: var(--t-small); flex: 1 1 14rem; }
+#themeToggle {
+  background: none; border: 1px solid var(--rule); color: var(--muted);
+  border-radius: 0; padding: var(--s1) var(--s2); font-size: var(--t-micro);
+  cursor: pointer; font-family: var(--mono); letter-spacing: .08em;
+  text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: var(--s2); line-height: 1;
+}
+#themeToggle:hover { color: var(--ink); border-color: var(--ink); }
+/* No `display` here on purpose — an ID selector would outrank the
+   class rules below and both icons would show at once. */
+#themeToggle .ico { width: .85rem; height: .85rem; }
+
+/* The icon shows the mode the button will switch TO, and follows the OS
+   preference until the toggle stamps an explicit theme on the root. */
+.ico-sun  { display: none; }
+.ico-moon { display: block; }
+@media (prefers-color-scheme: dark) {
+  .ico-sun  { display: block; }
+  .ico-moon { display: none; }
+}
+:root[data-theme="light"] .ico-sun  { display: none; }
+:root[data-theme="light"] .ico-moon { display: block; }
+:root[data-theme="dark"]  .ico-sun  { display: block; }
+:root[data-theme="dark"]  .ico-moon { display: none; }
+
+.lede { color: var(--muted); font-size: var(--t-body); margin: 0; max-width: 36rem; }
+.lede strong { color: var(--ink); font-weight: 600; }
+.lede code { font-family: var(--mono); color: var(--ink); }
+
+/* ---------- the instrument at rest ----------
+   The landing state IS the drill, showing the configured format and
+   waiting. Explanation sits below it, not in front of it. */
+.ready { padding: var(--s6) 0 var(--s7); }
+.ready-figure {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: var(--s2) var(--s3); margin-bottom: var(--s6);
+  letter-spacing: -.03em;
+}
+.rf-num {
+  font-size: clamp(3rem, 14vw, 5.5rem); line-height: .9; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* Each number keeps its own label when the line wraps on narrow screens. */
+.rf-pair { display: inline-flex; align-items: baseline; gap: var(--s3); }
+.rf-lab {
+  font-size: var(--t-small); color: var(--muted); letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.rf-sep { font-size: clamp(2rem, 8vw, 3.5rem); color: var(--rule); line-height: .9; }
+.ready-go { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.ready-go .primary { font-size: var(--t-lead); padding: var(--s4) var(--s6); }
+.ready-go .note { margin: 0; }
+.ready-go kbd {
+  font-family: var(--mono); border: 1px solid var(--rule); padding: 0 var(--s1);
+  color: var(--ink);
+}
+
+/* Secondary by construction: the explanation comes after the tool. */
+.about { margin-top: var(--s6); padding-top: var(--s5); border-top: 1px solid var(--rule); }
+
+/* ---------- drilling: nothing on screen but the instrument ---------- */
+body.drilling header,
+body.drilling footer { display: none; }
+body.drilling main { max-width: none; padding: 0; }
+
+/* Panels are separated by rules, not enclosed in boxes — an
+   instrument face, not a stack of cards. */
+fieldset {
+  border: none; border-top: 1px solid var(--rule); border-radius: 0;
+  background: none; padding: var(--s4) 0 var(--s5); margin: 0;
+}
+legend {
+  font-size: var(--t-micro); color: var(--muted); padding: 0 var(--s2) 0 0;
+  text-transform: uppercase; letter-spacing: .12em;
+}
+
+.row { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: var(--s1); }
+.field label { font-size: var(--t-small); color: var(--muted); }
+.field input[type="number"], .field input[type="text"] {
+  font-family: var(--mono); font-size: var(--t-body); width: 7rem;
+  padding: var(--s2); border: 1px solid var(--rule); border-radius: 0;
+  background: var(--panel); color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.field input:focus { border-color: var(--accent); outline: none; }
+
+.cats { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.cats label {
+  font-size: var(--t-small); cursor: pointer; border: 1px solid var(--rule);
+  border-radius: 0; padding: var(--s1) var(--s3); color: var(--muted);
+  user-select: none; background: var(--panel);
+}
+.cats input { position: absolute; opacity: 0; pointer-events: none; }
+.cats label:has(input:checked) {
+  border-color: var(--accent); color: var(--ink);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.cats label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button.primary {
+  font-family: var(--mono); font-size: var(--t-body); font-weight: 600;
+  background: var(--accent); color: var(--panel); border: 1px solid var(--accent);
+  border-radius: 0; padding: var(--s3) var(--s5); cursor: pointer;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+button.primary:hover { filter: brightness(1.1); }
+button.ghost {
+  font-family: var(--mono); font-size: var(--t-small); background: none;
+  color: var(--muted); border: 1px solid var(--rule);
+  border-radius: 0; padding: var(--s2) var(--s4); cursor: pointer;
+}
+button.ghost:hover { color: var(--ink); border-color: var(--ink); }
+.actions { display: flex; gap: var(--s3); align-items: center; flex-wrap: wrap; margin-top: var(--s4); }
+
+/* ---------- drill: the one screen that breaks the grid ----------
+   Fills the viewport. Status pinned top, question centred in the
+   remaining space, controls at the foot. */
+#drill {
+  min-height: 100dvh; display: flex; flex-direction: column;
+  padding: var(--s5) var(--s4) var(--s5);
+  max-width: 44rem; margin: 0 auto;
+}
+.drill-core {
+  flex: 1 1 auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--s5);
+}
+.drill-foot { display: flex; flex-direction: column; align-items: center; gap: var(--s4); }
+
+.bar {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: var(--t-small); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+#clock {
+  font-variant-numeric: tabular-nums; font-size: var(--t-lead);
+  color: var(--ink); letter-spacing: 0;
+}
+#clock.low { color: var(--warn); }
+#clock.hidden-clock { visibility: hidden; }
+.track { height: 2px; background: var(--rule); margin: var(--s2) 0 0; overflow: hidden; }
+.track > div { height: 100%; background: var(--accent); width: 0; transition: width .15s linear; }
+
+#question {
+  font-size: clamp(2.75rem, 13vw, 5rem); font-weight: 500;
+  letter-spacing: -.04em; text-align: center; margin: 0;
+  word-break: break-word; font-variant-numeric: tabular-nums; line-height: 1.05;
+}
+#answer {
+  font-family: var(--mono); font-size: clamp(1.75rem, 7vw, 2.5rem); text-align: center;
+  width: 100%; max-width: 14rem; margin: 0 auto; display: block;
+  padding: var(--s2) var(--s1); background: none; color: var(--ink);
+  border: none; border-bottom: 2px solid var(--rule); border-radius: 0;
+  font-variant-numeric: tabular-nums;
+}
+#answer:focus { outline: none; border-bottom-color: var(--accent); }
+.hint { text-align: center; color: var(--muted); font-size: var(--t-small); margin-top: var(--s6); }
+.hint kbd {
+  font-family: var(--mono); border: 1px solid var(--rule); border-radius: 0;
+  padding: 0 var(--s1); color: var(--ink);
+}
+.hint code { font-family: var(--mono); color: var(--ink); }
+
+/* ---------- results: summary first, then the detail ---------- */
+.headline {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--s4) var(--s5); margin: 0 0 var(--s6);
+  padding-bottom: var(--s5); border-bottom: 1px solid var(--ink);
+}
+.stat { display: flex; flex-direction: column; gap: var(--s1); }
+.stat .k {
+  font-size: var(--t-micro); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .12em;
+  /* Reserve two lines so labels of different lengths still leave
+     every value sitting on the same baseline. */
+  line-height: 1.25; min-height: 2.5em;
+}
+.stat.lead .k { min-height: 0; }
+.stat .v {
+  font-size: var(--t-stat); font-variant-numeric: tabular-nums;
+  line-height: 1.1; white-space: nowrap;
+}
+/* The projected score is the number that answers "am I improving?" */
+.stat.lead { grid-column: 1 / -1; }
+.stat.lead .v { font-size: clamp(2.75rem, 12vw, 4rem); color: var(--accent); letter-spacing: -.03em; }
+
+table { width: 100%; border-collapse: collapse; font-size: var(--t-small); }
+th, td {
+  text-align: right; padding: var(--s2) var(--s1);
+  border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums;
+}
+th:first-child, td:first-child { text-align: left; }
+th {
+  color: var(--muted); font-weight: 500; font-size: var(--t-micro);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+tbody tr:last-child td { border-bottom: none; }
+
+/* Encode the slowest category in form, not only in digits — the
+   row that needs attention should read without comparing numbers. */
+td.meter { width: 30%; padding-left: var(--s3); }
+.catbar { height: 6px; background: var(--rule); display: block; }
+.catbar > i { display: block; height: 100%; background: var(--accent); }
+tr.slowest .catbar > i { background: var(--warn); }
+tr.slowest td:first-child { color: var(--warn); }
+
+.note { color: var(--muted); font-size: var(--t-small); margin: var(--s3) 0 0; }
+.note strong { color: var(--ink); font-weight: 600; }
+.missed { font-size: var(--t-small); margin: var(--s2) 0 0; padding: 0; list-style: none; }
+.missed li {
+  padding: var(--s1) 0; border-bottom: 1px solid var(--rule);
+  display: flex; justify-content: space-between; gap: var(--s4);
+}
+.missed li:last-child { border-bottom: none; }
+.missed .given { color: var(--wrong); }
+.missed .skipped { color: var(--muted); }
+
+h2 {
+  font-size: var(--t-micro); color: var(--muted); text-transform: uppercase;
+  letter-spacing: .12em; font-weight: 500; margin: var(--s6) 0 var(--s2);
+}
+
+footer {
+  margin-top: var(--s7); padding-top: var(--s4);
+  border-top: 1px solid var(--rule); color: var(--muted); font-size: var(--t-small);
+  font-family: var(--sans);
+}
+footer a { color: var(--accent); }
+footer code { font-family: var(--mono); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>mental-math</h1>
+  <p>A timed arithmetic drill that records every answer.</p>
+  <button id="themeToggle" type="button"
+          title="Switch between light and dark" aria-label="Switch between light and dark">
+    <svg class="ico ico-sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 .6v2.4M8 13v2.4M.6 8h2.4M13 8h2.4M2.8 2.8l1.7 1.7M11.5 11.5l1.7 1.7M13.2 2.8l-1.7 1.7M4.5 11.5l-1.7 1.7"
+            stroke="currentColor" stroke-width="1.4" stroke-linecap="square"/>
+    </svg>
+    <svg class="ico ico-moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M13.4 10.4A5.7 5.7 0 0 1 5.6 2.6a5.7 5.7 0 1 0 7.8 7.8z"
+            fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>
+    <span>theme</span>
+  </button>
+</header>
+
+<!-- ============================= START ============================= -->
+<section id="start">
+  <div class="ready">
+    <div class="ready-figure">
+      <span class="rf-pair"><span class="rf-num" id="readyCount">80</span><span class="rf-lab">questions</span></span>
+      <span class="rf-sep">/</span>
+      <span class="rf-pair"><span class="rf-num" id="readyClock">8:00</span><span class="rf-lab">on the clock</span></span>
+    </div>
+    <div class="ready-go">
+      <button class="primary" id="btnStart" type="button">Start drill</button>
+      <span class="note">or press <kbd>Enter</kbd></span>
+    </div>
+  </div>
+
+  <fieldset>
+    <legend>session</legend>
+    <div class="row">
+      <div class="field">
+        <label for="optCount">questions</label>
+        <input id="optCount" type="number" min="1" max="500" value="80" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="optSeconds">seconds</label>
+        <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="optSeed">seed <span style="opacity:.7">(blank = random)</span></label>
+        <input id="optSeed" type="text" placeholder="e.g. 42" inputmode="numeric">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>categories</legend>
+    <div class="cats" id="catList"></div>
+    <p class="note">None selected uses the default weighted mix, which leans on multiplication and division — the operations that cost the most time under a clock.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>display</legend>
+    <div class="cats">
+      <label><input type="checkbox" id="optHideClock"><span>hide the countdown</span></label>
+    </div>
+    <p class="note">The clock still runs and still ends the session. This only hides it, so you can find out whether seeing it helps or stresses you.</p>
+  </fieldset>
+
+  <div class="about">
+    <h2>what this is</h2>
+    <p class="lede">
+      Several trading firms screen candidates with a fast, no-calculator arithmetic test
+      before any interview. This does not reproduce any firm's assessment — the widely
+      circulated <strong>80 questions in 8 minutes</strong> format turns out to have
+      <strong>no firm-published source</strong> at any of the six firms checked.
+      What it reproduces is the constraint: far more questions than there is time to
+      answer carefully. The sourced findings are in <code>RESEARCH.md</code>.
+    </p>
+  </div>
+</section>
+
+<!-- ============================= DRILL ============================= -->
+<section id="drill" hidden>
+  <div class="drill-top">
+    <div class="bar">
+      <span id="counter">1 / 80</span>
+      <span id="clock">8:00</span>
+    </div>
+    <div class="track"><div id="progressFill"></div></div>
+  </div>
+
+  <div class="drill-core">
+    <div id="question">—</div>
+    <input id="answer" type="text" inputmode="decimal" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="your answer">
+  </div>
+
+  <div class="drill-foot">
+    <p class="hint">
+      <kbd>Enter</kbd> submits · blank <kbd>Enter</kbd> skips · <kbd>Esc</kbd> stops.
+      Answers accept <code>36</code>, <code>0.375</code>, <code>3/8</code>, <code>-12.5</code>.
+    </p>
+    <button class="ghost" id="btnQuit" type="button">Stop and see results</button>
+  </div>
+</section>
+
+<!-- ============================ RESULTS ============================ -->
+<section id="results" hidden>
+  <div class="headline" id="headline"></div>
+
+  <h2>by category</h2>
+  <table>
+    <thead>
+      <tr><th>category</th><th>n</th><th>acc</th><th>think</th><th>total</th><th class="meter" aria-label="relative median time"></th></tr>
+    </thead>
+    <tbody id="catRows"></tbody>
+  </table>
+  <p class="note">
+    <strong>think</strong> is the median time from seeing the question to your first keystroke —
+    the arithmetic itself. <strong>total</strong> also includes typing the answer. The gap between
+    them is measurement overhead, not skill.
+  </p>
+
+  <div id="missedBlock" hidden>
+    <h2>missed</h2>
+    <ul class="missed" id="missedList"></ul>
+  </div>
+
+  <div class="actions" style="margin-top:2rem">
+    <button class="primary" id="btnAgain" type="button">Run again</button>
+    <button class="ghost" id="btnSameSeed" type="button">Repeat this exact set</button>
+    <button class="ghost" id="btnBack" type="button">Change settings</button>
+  </div>
+  <p class="note" id="seedNote"></p>
+</section>
+
+<footer>
+  Sessions are stored in this browser only (<code>localStorage</code>) and never uploaded.
+  The tool is public; the performance record is not.
+  <br>Source: <a href="https://github.com/mayherprog/mental-math" rel="noopener noreferrer">github.com/mayherprog/mental-math</a>
+</footer>
+
+</main>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Exact rational arithmetic.
+
+   Browsers grade with floats by default, so 0.1 + 0.2 is
+   0.30000000000000004 and a correct answer marks wrong. Every
+   value here is a ratio of two BigInt integers instead, which
+   mirrors Python's Fraction in the reference implementation.
+   ============================================================ */
+
+function bgcd(a, b) {
+  if (a < 0n) a = -a;
+  if (b < 0n) b = -b;
+  while (b) { const t = a % b; a = b; b = t; }
+  return a;
+}
+
+class Frac {
+  constructor(n, d = 1n) {
+    n = BigInt(n); d = BigInt(d);
+    if (d === 0n) throw new RangeError("zero denominator");
+    if (d < 0n) { n = -n; d = -d; }
+    const g = bgcd(n, d) || 1n;
+    this.n = n / g;
+    this.d = d / g;
+  }
+  add(o) { return new Frac(this.n * o.d + o.n * this.d, this.d * o.d); }
+  sub(o) { return new Frac(this.n * o.d - o.n * this.d, this.d * o.d); }
+  mul(o) { return new Frac(this.n * o.n, this.d * o.d); }
+  eq(o)  { return this.n === o.n && this.d === o.d; }
+  toNumber() { return Number(this.n) / Number(this.d); }
+}
+
+const F = (n, d = 1n) => new Frac(n, d);
+
+/* Nearest integer, ties to even — matching Python's round() on a
+   Fraction, so the two implementations agree on exact .5 cases. */
+function roundHalfEven(f) {
+  let q = f.n / f.d;             // BigInt division truncates toward zero
+  const r = f.n - q * f.d;
+  if (r === 0n) return q;
+  const twice = (r < 0n ? -r : r) * 2n;
+  const negative = f.n < 0n;
+  let step = false;
+  if (twice > f.d) step = true;
+  else if (twice === f.d) step = (q % 2n !== 0n);   // tie: land on the even one
+  if (step) q = negative ? q - 1n : q + 1n;
+  return q;
+}
+
+/* ============================================================
+   Seeded pseudo-random generator.
+
+   Deterministic within this implementation: the same seed always
+   yields the same question set here. It does NOT reproduce the
+   Python version's sequence for the same seed — the two use
+   different generators. Seeds are comparable web-to-web, not
+   web-to-terminal.
+   ============================================================ */
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const randint = (rnd, lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+const choice = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
+
+/* ============================================================
+   Question generation — a port of mentalmath/generator.py.
+   Ranges and weights are kept identical to the Python original.
+   ============================================================ */
+
+const CATEGORIES = ["add_sub", "multiply", "divide", "decimal", "percent", "fraction"];
+
+const CATEGORY_LABEL = {
+  add_sub: "add / subtract",
+  multiply: "multiply",
+  divide: "divide",
+  decimal: "decimals",
+  percent: "percentages",
+  fraction: "fractions",
+};
+
+const DEFAULT_WEIGHTS = {
+  add_sub: 0.22, multiply: 0.26, divide: 0.20,
+  decimal: 0.14, percent: 0.10, fraction: 0.08,
+};
+
+const BUILDERS = {
+  add_sub(rnd) {
+    let a = randint(rnd, 17, 899);
+    let b = randint(rnd, 17, 899);
+    if (rnd() < 0.45) {
+      // Subtraction, sometimes crossing into negatives on purpose.
+      if (rnd() < 0.25) { const lo = Math.min(a, b), hi = Math.max(a, b); a = lo; b = hi; }
+      return { prompt: `${a} − ${b}`, answer: F(BigInt(a - b)), category: "add_sub", places: null };
+    }
+    return { prompt: `${a} + ${b}`, answer: F(BigInt(a + b)), category: "add_sub", places: null };
+  },
+
+  multiply(rnd) {
+    const style = rnd();
+    let a, b;
+    if (style < 0.45)      { a = randint(rnd, 11, 99);  b = randint(rnd, 3, 9); }
+    else if (style < 0.85) { a = randint(rnd, 11, 49);  b = randint(rnd, 11, 29); }
+    else                   { a = randint(rnd, 101, 499); b = randint(rnd, 3, 9); }
+    return { prompt: `${a} × ${b}`, answer: F(BigInt(a * b)), category: "multiply", places: null };
+  },
+
+  divide(rnd) {
+    // Built as divisor x quotient so it always resolves exactly.
+    const divisor = randint(rnd, 3, 25);
+    const quotient = randint(rnd, 4, 60);
+    return {
+      prompt: `${divisor * quotient} ÷ ${divisor}`,
+      answer: F(BigInt(quotient)), category: "divide", places: null,
+    };
+  },
+
+  decimal(rnd) {
+    const a = F(BigInt(randint(rnd, 105, 9950)), 100n);
+    const b = F(BigInt(randint(rnd, 105, 9950)), 100n);
+    const sa = a.toNumber().toString(), sb = b.toNumber().toString();
+    if (rnd() < 0.5) return { prompt: `${sa} + ${sb}`, answer: a.add(b), category: "decimal", places: 2 };
+    return { prompt: `${sa} − ${sb}`, answer: a.sub(b), category: "decimal", places: 2 };
+  },
+
+  percent(rnd) {
+    const pct = choice(rnd, [5, 10, 12, 15, 20, 25, 30, 40, 60, 75, 80, 125, 150]);
+    const base = choice(rnd, [40, 60, 80, 120, 140, 160, 240, 320, 480, 640, 900]);
+    return {
+      prompt: `${pct}% of ${base}`,
+      answer: F(BigInt(pct * base), 100n), category: "percent", places: 2,
+    };
+  },
+
+  fraction(rnd) {
+    const [num, den] = choice(rnd, [
+      [1, 8], [3, 8], [5, 8], [7, 8],
+      [1, 4], [3, 4], [1, 5], [2, 5], [3, 5], [4, 5],
+      [1, 16], [3, 16], [1, 20], [7, 20], [1, 40], [3, 40],
+    ]);
+    return {
+      prompt: `${num}/${den} as a decimal`,
+      answer: F(BigInt(num), BigInt(den)), category: "fraction", places: 4,
+    };
+  },
+};
+
+function generate(count, seed, categories) {
+  const rnd = mulberry32(seed);
+  const pool = (categories && categories.length) ? categories : CATEGORIES;
+  const weights = (categories && categories.length)
+    ? pool.map(() => 1)
+    : pool.map((c) => DEFAULT_WEIGHTS[c]);
+
+  const total = weights.reduce((s, w) => s + w, 0);
+  const cumulative = [];
+  let run = 0;
+  for (const w of weights) { run += w; cumulative.push(run / total); }
+
+  const picks = [];
+  for (let i = 0; i < count; i++) {
+    const x = rnd();
+    let k = cumulative.findIndex((c) => x < c);
+    if (k < 0) k = pool.length - 1;
+    picks.push(pool[k]);
+  }
+  return picks.map((c) => BUILDERS[c](rnd));
+}
+
+/* ============================================================
+   Answer parsing and grading — a port of parse_answer and
+   Question.is_correct.
+   ============================================================ */
+
+function parseAnswer(text) {
+  const s = String(text).trim().replace(/,/g, "");
+  if (!s) return null;
+  let m;
+  if ((m = /^([+-]?\d+)$/.exec(s))) return F(BigInt(m[1]));
+  if ((m = /^([+-]?)(\d*)\.(\d+)$/.exec(s))) {
+    const sign = m[1] === "-" ? -1n : 1n;
+    const whole = m[2] === "" ? 0n : BigInt(m[2]);
+    const frac = BigInt(m[3]);
+    const scale = 10n ** BigInt(m[3].length);
+    return F(sign * (whole * scale + frac), scale);
+  }
+  if ((m = /^([+-]?\d+)\/(\d+)$/.exec(s))) {
+    const den = BigInt(m[2]);
+    if (den === 0n) return null;
+    return F(BigInt(m[1]), den);
+  }
+  return null;
+}
+
+function isCorrect(q, given) {
+  if (q.places === null) return given.eq(q.answer);
+  // Accept the rounded answer, and also an unrounded exact one.
+  if (given.eq(q.answer)) return true;
+  const scale = F(10n ** BigInt(q.places));
+  return roundHalfEven(q.answer.mul(scale)) === roundHalfEven(given.mul(scale));
+}
+
+/* Render an expected answer the way the Python version does:
+   integers plain, decimals to N places with trailing zeros stripped. */
+function renderAnswer(q) {
+  if (q.places === null) return (q.answer.n).toString();
+  const scale = F(10n ** BigInt(q.places));
+  const r = roundHalfEven(q.answer.mul(scale));
+  const negative = r < 0n;
+  const digits = (negative ? -r : r).toString().padStart(q.places + 1, "0");
+  const whole = digits.slice(0, digits.length - q.places);
+  const frac = digits.slice(digits.length - q.places).replace(/0+$/, "");
+  return (negative ? "-" : "") + whole + (frac ? "." + frac : "");
+}
+
+/* ============================================================
+   Session state
+   ============================================================ */
+
+const STORAGE_KEY = "mentalmath.sessions";
+
+const state = {
+  questions: [],
+  attempts: [],
+  index: 0,
+  limitSeconds: 480,
+  count: 80,
+  seed: 0,
+  categories: null,
+  startedAt: null,
+  startMs: 0,
+  shownMs: 0,
+  firstKeyMs: null,
+  tickHandle: null,
+  running: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  start: $("start"), drill: $("drill"), results: $("results"),
+  counter: $("counter"), clock: $("clock"), fill: $("progressFill"),
+  question: $("question"), answer: $("answer"),
+  headline: $("headline"), catRows: $("catRows"),
+  missedBlock: $("missedBlock"), missedList: $("missedList"),
+  seedNote: $("seedNote"), catList: $("catList"),
+};
+
+function show(section) {
+  for (const s of [el.start, el.drill, el.results]) s.hidden = (s !== section);
+  // While drilling, the page is the instrument: chrome gets out of the way.
+  document.body.classList.toggle("drilling", section === el.drill);
+}
+
+/* The landing figure mirrors the current settings, so the format you are
+   about to face is the first thing on the page rather than a footnote. */
+function refreshReadyFigure() {
+  const n = Math.max(1, Math.min(500, parseInt($("optCount").value, 10) || 80));
+  const t = Math.max(10, Math.min(7200, parseInt($("optSeconds").value, 10) || 480));
+  $("readyCount").textContent = n;
+  $("readyClock").textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}
+
+function selectedCategories() {
+  const picked = [...el.catList.querySelectorAll("input:checked")].map((i) => i.value);
+  return picked.length ? picked : null;
+}
+
+function beginSession() {
+  const count = Math.max(1, Math.min(500, parseInt($("optCount").value, 10) || 80));
+  const seconds = Math.max(10, Math.min(7200, parseInt($("optSeconds").value, 10) || 480));
+  const seedRaw = $("optSeed").value.trim();
+  const seed = seedRaw === ""
+    ? (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0)
+    : (Math.abs(parseInt(seedRaw, 10) || 0) >>> 0);
+
+  startWith({ count, seconds, seed, categories: selectedCategories() });
+}
+
+function startWith({ count, seconds, seed, categories }) {
+  state.count = count;
+  state.limitSeconds = seconds;
+  state.seed = seed;
+  state.categories = categories;
+  state.questions = generate(count, seed, categories);
+  state.attempts = [];
+  state.index = 0;
+  state.startedAt = new Date().toISOString();
+  state.running = true;
+
+  el.clock.classList.toggle("hidden-clock", $("optHideClock").checked);
+
+  show(el.drill);
+  state.startMs = performance.now();
+  renderQuestion();
+  el.answer.focus();
+
+  clearInterval(state.tickHandle);
+  state.tickHandle = setInterval(tick, 200);
+  tick();
+}
+
+function elapsed() { return (performance.now() - state.startMs) / 1000; }
+
+function tick() {
+  if (!state.running) return;
+  const remaining = state.limitSeconds - elapsed();
+  if (remaining <= 0) { finish(false); return; }
+  const m = Math.floor(remaining / 60);
+  const s = Math.floor(remaining % 60);
+  el.clock.textContent = `${m}:${String(s).padStart(2, "0")}`;
+  el.clock.classList.toggle("low", remaining <= 30);
+  el.fill.style.width = `${(elapsed() / state.limitSeconds) * 100}%`;
+}
+
+function renderQuestion() {
+  const q = state.questions[state.index];
+  el.question.textContent = q.prompt;
+  el.counter.textContent = `${state.index + 1} / ${state.count}`;
+  el.answer.value = "";
+  state.shownMs = performance.now();
+  state.firstKeyMs = null;
+}
+
+function submit() {
+  if (!state.running) return;
+  const q = state.questions[state.index];
+  const raw = el.answer.value;
+  const now = performance.now();
+
+  const value = parseAnswer(raw);
+  state.attempts.push({
+    prompt: q.prompt,
+    category: q.category,
+    expected: renderAnswer(q),
+    given: raw.trim(),
+    correct: value !== null && isCorrect(q, value),
+    seconds: +((now - state.shownMs) / 1000).toFixed(3),
+    thinkSeconds: state.firstKeyMs === null
+      ? null
+      : +((state.firstKeyMs - state.shownMs) / 1000).toFixed(3),
+  });
+
+  // The clock is the point: a session ends the moment time runs out.
+  if (elapsed() >= state.limitSeconds) { finish(false); return; }
+
+  state.index += 1;
+  if (state.index >= state.questions.length) { finish(true); return; }
+  renderQuestion();
+}
+
+function finish(completed) {
+  state.running = false;
+  clearInterval(state.tickHandle);
+  const record = {
+    startedAt: state.startedAt,
+    limitSeconds: state.limitSeconds,
+    questionCount: state.count,
+    seed: state.seed,
+    categories: state.categories,
+    attempts: state.attempts,
+    elapsedSeconds: +Math.min(elapsed(), state.limitSeconds).toFixed(2),
+    completed,
+  };
+  saveSession(record);
+  renderResults(record);
+  show(el.results);
+}
+
+function saveSession(record) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    all.push(record);
+    // Keep the file from growing without bound; 200 sessions is years of drilling.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all.slice(-200)));
+  } catch (e) {
+    /* Private browsing or a full quota. Losing the record must never
+       lose the results screen, so this is deliberately swallowed. */
+  }
+}
+
+/* ============================================================
+   Scoring — a port of mentalmath/stats.py
+   ============================================================ */
+
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function ratePerMinute(r) {
+  if (r.elapsedSeconds <= 0) return 0;
+  const correct = r.attempts.filter((a) => a.correct).length;
+  return correct / (r.elapsedSeconds / 60);
+}
+
+function projectedScore(r) { return ratePerMinute(r) * (r.limitSeconds / 60); }
+
+function byCategory(r) {
+  const out = [];
+  for (const c of CATEGORIES) {
+    const rows = r.attempts.filter((a) => a.category === c);
+    if (!rows.length) continue;
+    out.push({
+      category: c,
+      n: rows.length,
+      accuracy: rows.filter((a) => a.correct).length / rows.length,
+      medianTotal: median(rows.map((a) => a.seconds)),
+      medianThink: median(rows.filter((a) => a.thinkSeconds !== null).map((a) => a.thinkSeconds)),
+    });
+  }
+  // Slowest first: that is the row that changes what you practise tomorrow.
+  out.sort((a, b) => b.medianTotal - a.medianTotal);
+  return out;
+}
+
+function renderResults(r) {
+  const correct = r.attempts.filter((a) => a.correct).length;
+  const accuracy = r.attempts.length ? correct / r.attempts.length : 0;
+
+  el.headline.innerHTML = "";
+  const stats = [
+    // Lead with the one number that answers "am I getting faster?"
+    // Denominators live in the label, not the value — a wrapping
+    // "462s of 480s" breaks the grid row.
+    ["projected score at full time", `${Math.round(projectedScore(r))}`, "stat lead"],
+    [`attempted of ${r.questionCount}`, `${r.attempts.length}`, "stat"],
+    ["correct", `${correct}`, "stat"],
+    ["accuracy", `${Math.round(accuracy * 100)}%`, "stat"],
+    [`elapsed of ${r.limitSeconds}s`, `${Math.round(r.elapsedSeconds)}s`, "stat"],
+    ["correct per minute", `${ratePerMinute(r).toFixed(1)}`, "stat"],
+  ];
+  for (const [k, v, cls] of stats) {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.innerHTML = `<span class="k">${k}</span><span class="v">${v}</span>`;
+    el.headline.appendChild(d);
+  }
+
+  el.catRows.innerHTML = "";
+  const rows = byCategory(r);
+  // Bars are scaled against the slowest category, so the row that
+  // costs the most clock is legible without reading the digits.
+  const worst = rows.length ? Math.max(...rows.map((x) => x.medianTotal)) : 0;
+  rows.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    if (i === 0 && rows.length > 1) tr.className = "slowest";
+    const pct = worst > 0 ? (row.medianTotal / worst) * 100 : 0;
+    tr.innerHTML =
+      `<td>${CATEGORY_LABEL[row.category]}</td>` +
+      `<td>${row.n}</td>` +
+      `<td>${Math.round(row.accuracy * 100)}%</td>` +
+      `<td>${row.medianThink === null ? "—" : row.medianThink.toFixed(1) + "s"}</td>` +
+      `<td>${row.medianTotal.toFixed(1)}s</td>` +
+      `<td class="meter"><span class="catbar"><i style="width:${pct.toFixed(1)}%"></i></span></td>`;
+    el.catRows.appendChild(tr);
+  });
+
+  const wrong = r.attempts.filter((a) => !a.correct);
+  el.missedBlock.hidden = wrong.length === 0;
+  el.missedList.innerHTML = "";
+  for (const a of wrong.slice(0, 12)) {
+    const li = document.createElement("li");
+    const given = a.given
+      ? `<span class="given">${escapeHtml(a.given)}</span>`
+      : `<span class="skipped">skipped</span>`;
+    li.innerHTML = `<span>${escapeHtml(a.prompt)} = ${escapeHtml(a.expected)}</span>${given}`;
+    el.missedList.appendChild(li);
+  }
+  if (wrong.length > 12) {
+    const li = document.createElement("li");
+    li.className = "skipped";
+    li.textContent = `... and ${wrong.length - 12} more`;
+    el.missedList.appendChild(li);
+  }
+
+  el.seedNote.textContent =
+    `seed ${r.seed} · ${r.completed ? "finished the set" : "stopped on the clock"}` +
+    ` · saved to this browser`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+
+for (const c of CATEGORIES) {
+  const label = document.createElement("label");
+  label.innerHTML = `<input type="checkbox" value="${c}"><span>${CATEGORY_LABEL[c]}</span>`;
+  el.catList.appendChild(label);
+}
+
+/* Only characters that can appear in an answer are accepted: digits, a
+   decimal point, a fraction slash, a leading minus, and thousands commas.
+   Letters are rejected at the input rather than parsed and marked wrong,
+   so a stray keystroke does not silently cost a question.
+
+   A /g/ regex is stateful under .test(), so the check and the strip use
+   separate patterns. */
+const BAD_CHAR = /[^0-9./,\-]/;
+const BAD_CHARS_ALL = /[^0-9./,\-]/g;
+
+el.answer.addEventListener("beforeinput", (e) => {
+  if (typeof e.data === "string" && BAD_CHAR.test(e.data)) e.preventDefault();
+});
+
+/* Fallback for paste, autofill and mobile keyboards that bypass beforeinput. */
+el.answer.addEventListener("input", () => {
+  const cleaned = el.answer.value.replace(BAD_CHARS_ALL, "");
+  if (cleaned === el.answer.value) return;
+  const removed = el.answer.value.length - cleaned.length;
+  const caret = Math.max(0, (el.answer.selectionStart || 0) - removed);
+  el.answer.value = cleaned;
+  el.answer.setSelectionRange(caret, caret);
+});
+
+el.answer.addEventListener("keydown", (e) => {
+  // Think time is the moment answering began, even if that keystroke was a typo.
+  if (state.firstKeyMs === null && e.key.length === 1) state.firstKeyMs = performance.now();
+  if (e.key === "Enter") { e.preventDefault(); submit(); }
+  if (e.key === "Escape") { e.preventDefault(); finish(false); }
+});
+
+$("btnQuit").addEventListener("click", () => finish(false));
+
+$("btnStart").addEventListener("click", beginSession);
+$("optCount").addEventListener("input", refreshReadyFigure);
+$("optSeconds").addEventListener("input", refreshReadyFigure);
+refreshReadyFigure();
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !el.start.hidden && document.activeElement !== el.answer) {
+    const tag = (document.activeElement.tagName || "").toLowerCase();
+    if (tag !== "button") { e.preventDefault(); beginSession(); }
+  }
+});
+
+$("btnAgain").addEventListener("click", () => {
+  startWith({
+    count: state.count, seconds: state.limitSeconds,
+    seed: (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0),
+    categories: state.categories,
+  });
+});
+
+$("btnSameSeed").addEventListener("click", () => {
+  startWith({
+    count: state.count, seconds: state.limitSeconds,
+    seed: state.seed, categories: state.categories,
+  });
+});
+
+$("btnBack").addEventListener("click", () => show(el.start));
+
+$("themeToggle").addEventListener("click", () => {
+  const root = document.documentElement;
+  const current = root.getAttribute("data-theme");
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = current ? (current === "dark" ? "light" : "dark") : (systemDark ? "light" : "dark");
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("mentalmath.theme", next); } catch (e) {}
+});
+
+try {
+  const saved = localStorage.getItem("mentalmath.theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+} catch (e) {}
+</script>
+</body>
+</html>
