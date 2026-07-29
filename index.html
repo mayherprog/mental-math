@@ -170,11 +170,31 @@ body.drilling main { max-width: none; padding: 0; }
   padding: var(--s4); margin: 0 0 var(--s3);
   display: flex; flex-direction: column; gap: var(--s3);
 }
-.panel-label {
-  font-family: var(--mono); font-size: var(--t-micro); color: var(--muted);
-  text-transform: uppercase; letter-spacing: .12em; margin: 0;
-}
 .panel .note { margin: 0; }
+
+/* Collapsible panel. The whole summary row is the hit target, and the
+   marker is replaced so it reads as a control rather than a bullet. */
+details.panel { display: block; padding: 0; }
+details.panel > summary {
+  list-style: none; cursor: pointer; padding: var(--s4);
+  display: flex; align-items: center; gap: var(--s3);
+  font-family: var(--mono); font-size: var(--t-micro);
+  text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
+}
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary:hover { color: var(--ink); }
+details.panel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sum-label { flex: 1 1 auto; }
+.sum-state { color: var(--ink); text-transform: none; letter-spacing: 0; }
+/* Chevron, drawn in CSS so nothing has to load. */
+details.panel > summary::after {
+  content: ""; width: .5rem; height: .5rem; flex: none;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px); transition: transform .15s ease;
+}
+details.panel[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+details.panel[open] > summary { border-bottom: 1px solid var(--rule); }
+details.panel > .cats { padding: var(--s4); }
 
 /* A toggle should look like a toggle, not like a button you press once. */
 .switch {
@@ -410,19 +430,19 @@ footer code { font-family: var(--mono); }
         <label for="optSeconds">seconds</label>
         <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
       </div>
-      <div class="field">
-        <label for="optSeed">repeat code</label>
-        <input id="optSeed" type="text" placeholder="random" inputmode="numeric">
-      </div>
     </div>
-    <p class="note">A repeat code gives you the same questions again, so two sessions compare fairly. Leave it blank for a fresh set.</p>
-  </div>
-
-  <div class="panel">
-    <p class="panel-label">Practise only these</p>
-    <div class="cats" id="catList"></div>
     <label class="switch"><input type="checkbox" id="optHideClock"><span>Hide the countdown</span></label>
   </div>
+
+  <!-- <details> gives a collapsible panel with no JavaScript, and stays
+       keyboard-operable and screen-reader-correct for free. -->
+  <details class="panel" id="topicPanel">
+    <summary>
+      <span class="sum-label">Filter by topic</span>
+      <span class="sum-state" id="topicState">all topics</span>
+    </summary>
+    <div class="cats" id="catList"></div>
+  </details>
 
   <div class="about">
     <h2>what this is</h2>
@@ -784,10 +804,10 @@ function selectedCategories() {
 function beginSession() {
   const count = Math.max(1, Math.min(500, parseInt($("optCount").value, 10) || 80));
   const seconds = Math.max(10, Math.min(7200, parseInt($("optSeconds").value, 10) || 480));
-  const seedRaw = $("optSeed").value.trim();
-  const seed = seedRaw === ""
-    ? (Math.floor(Math.random() * 0xFFFFFFFF) >>> 0)
-    : (Math.abs(parseInt(seedRaw, 10) || 0) >>> 0);
+  // Every session is still seeded and the seed is still recorded, so a
+  // run stays reproducible from its saved record. There is just no
+  // control for typing one in.
+  const seed = Math.floor(Math.random() * 0xFFFFFFFF) >>> 0;
 
   startWith({ count, seconds, seed, categories: selectedCategories() });
 }
@@ -991,10 +1011,9 @@ function renderResults(r) {
     el.missedList.appendChild(li);
   }
 
-  el.seedNote.textContent =
-    `Repeat code ${r.seed} — it is already filled in on the home screen, ` +
-    `so pressing Start gives you these exact questions again. ` +
-    `Clear it for a fresh set.`;
+  el.seedNote.textContent = r.completed
+    ? "You finished the set. Saved to this browser."
+    : "The clock ran out. Saved to this browser.";
 }
 
 function escapeHtml(s) {
@@ -1011,6 +1030,19 @@ for (const c of CATEGORIES) {
   label.innerHTML = `<input type="checkbox" value="${c}"><span>${CATEGORY_LABEL[c]}</span>`;
   el.catList.appendChild(label);
 }
+
+/* The collapsed panel has to say what it is hiding, or closing it loses
+   the fact that a filter is active. */
+function refreshTopicState() {
+  const picked = selectedCategories();
+  $("topicState").textContent = !picked
+    ? "all topics"
+    : picked.length === 1
+      ? CATEGORY_LABEL[picked[0]]
+      : `${picked.length} of ${CATEGORIES.length}`;
+}
+el.catList.addEventListener("change", refreshTopicState);
+refreshTopicState();
 
 /* Only characters that can appear in an answer are accepted: digits, a
    decimal point, a fraction slash, a leading minus, and thousands commas.
@@ -1070,7 +1102,6 @@ document.addEventListener("keydown", (e) => {
 /* One way back, and one place to start from. Repeating a set is done by
    leaving the repeat code in place rather than by its own button. */
 $("btnHome").addEventListener("click", () => {
-  $("optSeed").value = state.seed;
   refreshReadyFigure();
   show(el.start);
   window.scrollTo(0, 0);
