@@ -157,7 +157,7 @@ header p { margin: 0; color: var(--muted); font-size: var(--t-small); flex: 1 1 
 }
 
 /* Secondary by construction: the explanation comes after the tool. */
-.about { margin-top: var(--s6); padding-top: var(--s5); border-top: 1px solid var(--rule); }
+#aboutPanel { margin-top: var(--s5); }
 
 /* ---------- drilling: nothing on screen but the instrument ---------- */
 body.drilling header,
@@ -194,7 +194,7 @@ details.panel > summary::after {
 }
 details.panel[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
 details.panel[open] > summary { border-bottom: 1px solid var(--rule); }
-details.panel > .cats { padding: var(--s4); }
+.panel-body { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
 
 /* A toggle should look like a toggle, not like a button you press once. */
 .switch {
@@ -208,13 +208,16 @@ details.panel > .cats { padding: var(--s4); }
 .row { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field label { font-size: var(--t-small); color: var(--muted); }
-/* Inputs sit inset against the panel they live on. */
+/* Reviewers did not realise these were editable. A heavier accent
+   underline and a larger target read as "type here" rather than as a
+   printed readout. */
 .field input[type="number"], .field input[type="text"] {
-  font-family: var(--mono); font-size: var(--t-body); width: 7rem;
+  font-family: var(--mono); font-size: var(--t-lead); width: 7rem;
   padding: var(--s2); border: 1px solid var(--rule); border-radius: 0;
+  border-bottom: 2px solid var(--accent);
   background: var(--ground); color: var(--ink); font-variant-numeric: tabular-nums;
 }
-.field input:focus { border-color: var(--accent); outline: none; }
+.field input:focus { border-color: var(--accent); outline: none; background: var(--accent-soft); }
 
 .cats { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .cats label {
@@ -420,41 +423,53 @@ footer code { font-family: var(--mono); }
     </div>
   </div>
 
-  <div class="panel">
-    <div class="row">
-      <div class="field">
-        <label for="optCount">questions</label>
-        <input id="optCount" type="number" min="1" max="500" value="80" inputmode="numeric">
+  <!-- Every panel is the same <details> disclosure: native, so it stays
+       keyboard-operable and screen-reader-correct with no JavaScript.
+       Each summary shows its CURRENT value, which is what tells a reader
+       the setting is adjustable at all. -->
+  <details class="panel" id="lengthPanel">
+    <summary>
+      <span class="sum-label">Length</span>
+      <span class="sum-state" id="lengthState">80 questions · 8:00</span>
+    </summary>
+    <div class="panel-body">
+      <div class="row">
+        <div class="field">
+          <label for="optCount">questions</label>
+          <input id="optCount" type="number" min="1" max="500" value="80" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="optSeconds">seconds</label>
+          <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
+        </div>
       </div>
-      <div class="field">
-        <label for="optSeconds">seconds</label>
-        <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
-      </div>
+      <label class="switch"><input type="checkbox" id="optHideClock"><span>Hide the countdown</span></label>
     </div>
-    <label class="switch"><input type="checkbox" id="optHideClock"><span>Hide the countdown</span></label>
-  </div>
+  </details>
 
-  <!-- <details> gives a collapsible panel with no JavaScript, and stays
-       keyboard-operable and screen-reader-correct for free. -->
   <details class="panel" id="topicPanel">
     <summary>
       <span class="sum-label">Filter by topic</span>
       <span class="sum-state" id="topicState">all topics</span>
     </summary>
-    <div class="cats" id="catList"></div>
+    <div class="panel-body"><div class="cats" id="catList"></div></div>
   </details>
 
-  <div class="about">
-    <h2>what this is</h2>
-    <p class="lede">
-      Several trading firms screen candidates with a fast, no-calculator arithmetic test
-      before any interview. This does not reproduce any firm's assessment — the widely
-      circulated <strong>80 questions in 8 minutes</strong> format turns out to have
-      <strong>no firm-published source</strong> at any of the six firms checked.
-      What it reproduces is the constraint: far more questions than there is time to
-      answer carefully. The sourced findings are in <code>RESEARCH.md</code>.
-    </p>
-  </div>
+  <details class="panel" id="aboutPanel">
+    <summary>
+      <span class="sum-label">What this is</span>
+    </summary>
+    <div class="panel-body">
+      <p class="lede">
+        Several trading firms screen candidates with a fast, no-calculator arithmetic test
+        before any interview. This does not reproduce any firm's assessment — the widely
+        circulated <strong>80 questions in 8 minutes</strong> format turns out to have
+        <strong>no firm-published source</strong> at any of the six firms checked.
+        What it reproduces is the constraint: far more questions than there is time to
+        answer carefully. The sourced findings are in <code>RESEARCH.md</code>.
+      </p>
+    </div>
+  </details>
 </section>
 
 <!-- ============================= DRILL ============================= -->
@@ -484,7 +499,7 @@ footer code { font-family: var(--mono); }
       Leave it blank to skip.
       <span class="keys"><br><kbd>Enter</kbd> submits · <kbd>Esc</kbd> stops.</span>
     </p>
-    <button class="ghost" id="btnQuit" type="button">Stop</button>
+    <button class="ghost" id="btnQuit" type="button">Quit</button>
   </div>
 </section>
 
@@ -792,8 +807,12 @@ function show(section) {
 function refreshReadyFigure() {
   const n = Math.max(1, Math.min(500, parseInt($("optCount").value, 10) || 80));
   const t = Math.max(10, Math.min(7200, parseInt($("optSeconds").value, 10) || 480));
+  const clock = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
   $("readyCount").textContent = n;
-  $("readyClock").textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  $("readyClock").textContent = clock;
+  // The collapsed summary carries the current value; that is what tells
+  // a reader the setting can be changed at all.
+  $("lengthState").textContent = `${n} question${n === 1 ? "" : "s"} · ${clock}`;
 }
 
 function selectedCategories() {
