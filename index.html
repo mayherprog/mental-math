@@ -719,6 +719,14 @@ const BUILDERS = {
 function generate(count, seed, categories) {
   const rnd = mulberry32(seed);
   const pool = (categories && categories.length) ? categories : CATEGORIES;
+  for (const c of pool) {
+    // Mirrors the ValueError in generate() in mentalmath/generator.py. Without
+    // this, an unknown name fails later as an opaque "BUILDERS[c] is not a
+    // function", which is a worse error and a different one from the reference.
+    if (!Object.prototype.hasOwnProperty.call(BUILDERS, c)) {
+      throw new RangeError("unknown category: " + c);
+    }
+  }
   const weights = (categories && categories.length)
     ? pool.map(() => 1)
     : pool.map((c) => DEFAULT_WEIGHTS[c]);
@@ -1168,6 +1176,147 @@ try {
   const saved = localStorage.getItem("mentalmath.theme");
   if (saved) document.documentElement.setAttribute("data-theme", saved);
 } catch (e) {}
+
+/* ============================================================
+   Self-test.
+
+   The arithmetic above is a port, and a port is a claim that two
+   implementations agree. This is how that claim is checked rather
+   than asserted: every case here mirrors a test in
+   tests/test_generator.py, plus the round-half-to-even cases,
+   which are the ones a float implementation gets wrong.
+
+   Run it by opening this file with ?selftest appended, or call
+   mentalMathSelfTest() from the console. It touches no DOM and no
+   storage, so it is safe to run on the live page.
+   ============================================================ */
+
+function mentalMathSelfTest(log) {
+  const out = [];
+  let pass = 0;
+  const fail = [];
+  const check = (name, cond) => {
+    if (cond) { pass++; out.push("PASS  " + name); }
+    else { fail.push(name); out.push("FAIL  " + name); }
+  };
+
+  // --- mirrors TestGeneration.test_every_category_builds ---
+  for (const category of CATEGORIES) {
+    const qs = generate(200, 7, [category]);
+    check("every category builds: " + category + " count",
+      qs.length === 200);
+    check("every category builds: " + category + " tagged",
+      qs.every((q) => q.category === category));
+    check("every category builds: " + category + " has a prompt",
+      qs.every((q) => typeof q.prompt === "string" && q.prompt.length > 0));
+  }
+
+  // --- mirrors test_seed_is_reproducible ---
+  check("same seed gives the same prompts",
+    JSON.stringify(generate(50, 99).map((q) => q.prompt)) ===
+    JSON.stringify(generate(50, 99).map((q) => q.prompt)));
+  check("a different seed gives different prompts",
+    JSON.stringify(generate(50, 99).map((q) => q.prompt)) !==
+    JSON.stringify(generate(50, 100).map((q) => q.prompt)));
+
+  // --- mirrors test_division_is_always_exact ---
+  check("division is always exact",
+    generate(500, 3, ["divide"]).every((q) => q.answer.d === 1n));
+
+  // --- mirrors test_integer_questions_declare_no_places ---
+  check("integer questions declare no places",
+    generate(300, 5, ["add_sub", "multiply", "divide"])
+      .every((q) => q.places === null));
+
+  // --- mirrors test_unknown_category_rejected ---
+  let threw = false;
+  try { generate(5, 1, ["algebra"]); } catch (e) { threw = true; }
+  check("unknown category is rejected", threw);
+
+  // --- mirrors TestGrading.test_exact_integer_grading ---
+  const qm = generate(1, 1, ["multiply"])[0];
+  check("exact integer grading accepts the answer", isCorrect(qm, qm.answer));
+  check("exact integer grading rejects answer + 1",
+    !isCorrect(qm, qm.answer.add(F(1n))));
+
+  // --- mirrors test_decimal_rounding_is_accepted ---
+  // 1/40 = 0.025 exactly; the rounded form and the exact value both pass.
+  const fortieth = generate(400, 11, ["fraction"])
+    .find((q) => q.answer.n === 1n && q.answer.d === 40n);
+  if (fortieth) {
+    check("1/40 accepts 0.025", isCorrect(fortieth, parseAnswer("0.025")));
+    check("1/40 accepts 1/40", isCorrect(fortieth, parseAnswer("1/40")));
+    check("1/40 rejects 0.03", !isCorrect(fortieth, parseAnswer("0.03")));
+  } else {
+    // The generators differ, so this seed need not produce 1/40 here. Build
+    // the case directly rather than silently skipping the assertion.
+    const synthetic = { answer: F(1n, 40n), places: 4, category: "fraction" };
+    check("1/40 accepts 0.025", isCorrect(synthetic, parseAnswer("0.025")));
+    check("1/40 accepts 1/40", isCorrect(synthetic, parseAnswer("1/40")));
+    check("1/40 rejects 0.03", !isCorrect(synthetic, parseAnswer("0.03")));
+  }
+
+  // --- mirrors test_decimal_sums_avoid_float_error ---
+  check("decimal sums grade exactly",
+    generate(400, 2, ["decimal"]).every((q) => isCorrect(q, q.answer)));
+  // The specific case float arithmetic fails: 0.1 + 0.2 === 0.30000000000000004
+  check("0.1 + 0.2 grades as 0.3",
+    parseAnswer("0.1").add(parseAnswer("0.2")).eq(parseAnswer("0.3")));
+
+  // --- mirrors test_percent_answers_are_exact ---
+  check("percent answers grade exactly",
+    generate(200, 4, ["percent"]).every((q) => isCorrect(q, q.answer)));
+
+  // --- mirrors TestParsing.test_accepts_common_forms ---
+  const forms = [["36", 36n, 1n], [" 0.375 ", 3n, 8n], ["3/8", 3n, 8n],
+                 ["-12.5", -25n, 2n], ["1,250", 1250n, 1n]];
+  for (const [text, n, d] of forms) {
+    const got = parseAnswer(text);
+    check("parses " + JSON.stringify(text),
+      got !== null && got.n === n && got.d === d);
+  }
+
+  // --- mirrors TestParsing.test_rejects_garbage ---
+  for (const bad of ["", "   ", "abc", "1/0", "3..4"]) {
+    check("rejects " + JSON.stringify(bad), parseAnswer(bad) === null);
+  }
+
+  // --- round-half-to-even, checked against real Python round(Fraction(...)) ---
+  // Python: [round(Fraction(n, d)) for n, d in cases]. Ties land on the even
+  // integer in both directions, which is where a naive implementation drifts.
+  const rounding = [
+    [F(1n, 2n), 0n], [F(3n, 2n), 2n], [F(5n, 2n), 2n], [F(7n, 2n), 4n],
+    [F(-1n, 2n), 0n], [F(-3n, 2n), -2n], [F(-5n, 2n), -2n],
+    [F(1n, 3n), 0n], [F(2n, 3n), 1n], [F(-2n, 3n), -1n], [F(4n, 1n), 4n],
+  ];
+  for (const [f, want] of rounding) {
+    check("round(" + f.n + "/" + f.d + ") === " + want,
+      roundHalfEven(f) === want);
+  }
+
+  const total = pass + fail.length;
+  const summary = fail.length === 0
+    ? pass + " of " + total + " assertions passed"
+    : fail.length + " of " + total + " FAILED: " + fail.join("; ");
+  out.push("");
+  out.push(summary);
+  if (log !== false) console.log(out.join("\n"));
+  return { passed: pass, failed: fail.length, total: total, failures: fail, summary: summary };
+}
+
+window.mentalMathSelfTest = mentalMathSelfTest;
+
+if (location.search.indexOf("selftest") !== -1) {
+  const r = mentalMathSelfTest();
+  const box = document.createElement("pre");
+  box.style.cssText = "margin:1rem;padding:1rem;border-radius:8px;white-space:pre-wrap;" +
+    "font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;" +
+    (r.failed ? "background:#fdecea;color:#611a15" : "background:#e7f4e8;color:#1b3c1e");
+  box.textContent = r.summary + "\n\n" + (r.failed
+    ? "Failures:\n" + r.failures.join("\n")
+    : "Every case mirrors a test in tests/test_generator.py.");
+  document.querySelector("main").prepend(box);
+}
 </script>
 </body>
 </html>

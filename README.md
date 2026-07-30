@@ -48,9 +48,16 @@ being lost, which is the only thing that changes what you practice tomorrow.
 
 `index.html` is the web version: one self-contained file, no build step, no
 framework, no external requests, no backend. Open it in a browser, or use the
-hosted copy. The arithmetic logic is a port of the Python below, verified by 39
-assertions mirroring `tests/test_generator.py`, including a check that
-round-half-to-even agrees with Python's `round(Fraction(...))`.
+hosted copy. The arithmetic logic is a port of the Python below, and a port is a
+claim that two implementations agree. Append `?selftest` to the URL to check that
+claim rather than take it: **52 assertions, each mirroring a case in
+`tests/test_generator.py`**, including eleven round-half-to-even cases checked
+against real Python `round(Fraction(...))` output. The result prints on the page
+and to the console; `mentalMathSelfTest()` returns it as an object.
+
+An earlier version of this README claimed 39 assertions and shipped no harness at
+all, so the claim could not be run. That was the exact failure this repository's
+[`RESEARCH.md`](RESEARCH.md) is an argument against, found in its own README.
 
 One divergence worth knowing: `--seed` values are **not** comparable between the
 two versions. They use different pseudo-random generators, so the same seed
@@ -113,9 +120,18 @@ gitignored: the tool is public, the performance record is personal.
 
 ## Tests
 
+Both implementations are tested, and the two suites cover the same ground on
+purpose — that is what makes them a check on each other rather than two separate
+claims.
+
 ```bash
-python3 -m unittest discover -s tests -t .
+python3 -m unittest discover -s tests -t .    # 11 tests, 19 assertions
 ```
 
-Tests cover generation across every category, seed reproducibility, exact
-grading under float-hostile inputs, and answer parsing.
+For the browser version, open `index.html?selftest` — 52 assertions, printed on
+the page and to the console.
+
+Both cover generation across every category, seed reproducibility, exact grading
+under float-hostile inputs, and answer parsing. The browser suite adds the
+round-half-to-even cases, because that is the behaviour a JavaScript port is most
+likely to get wrong and least likely to notice.
