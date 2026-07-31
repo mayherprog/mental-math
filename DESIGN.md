@@ -96,13 +96,17 @@ Type scale runs `--t-micro` 12px, `--t-small` 14px, `--t-body` 16px, `--t-lead` 
   therefore always rendered and only *restyled* under `(pointer: coarse), (hover:
   none)`, never created by it. A media query must not be the only thing standing
   between a user and a working control.
-- The corollary, which reads like an exception and is not: the `±` and `/` keys *are*
-  created by that media query. Those keypads also omit minus and slash, both of which
-  the answer parser accepts, so on a phone they are the only way to enter `-445` or
-  `3/8`. A physical keyboard already has both keys, so hiding the row there removes a
+- The corollary, which reads like an exception and is not: the keypad *is* created by
+  that media query. Those system keypads omit minus and slash, both of which the
+  answer parser accepts, and a page cannot add a key to a keyboard it does not own —
+  so on touch the page supplies the whole pad and refuses the system one three ways
+  (`inputmode="none"`, `readOnly`, and `pointer-events: none` on the field). A
+  physical keyboard already has every character, so hiding the keys there removes a
   duplicate, not a path. The test is whether the control is the sole route to a
-  capability — the submit button is, on touch; the assist row is, on touch; neither is
-  ever the sole route on a keyboard.
+  capability, and the submit button proves the rule rather than breaking it: it is a
+  cell of that grid, so it stays rendered on every device with the keys hidden around
+  it. A keyboard attached to a touch device still types — the document takes those
+  keystrokes, since the field can no longer hold focus.
 
 ## Copy
 
