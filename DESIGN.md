@@ -96,6 +96,13 @@ Type scale runs `--t-micro` 12px, `--t-small` 14px, `--t-body` 16px, `--t-lead` 
   therefore always rendered and only *restyled* under `(pointer: coarse), (hover:
   none)`, never created by it. A media query must not be the only thing standing
   between a user and a working control.
+- The corollary, which reads like an exception and is not: the `±` and `/` keys *are*
+  created by that media query. Those keypads also omit minus and slash, both of which
+  the answer parser accepts, so on a phone they are the only way to enter `-445` or
+  `3/8`. A physical keyboard already has both keys, so hiding the row there removes a
+  duplicate, not a path. The test is whether the control is the sole route to a
+  capability — the submit button is, on touch; the assist row is, on touch; neither is
+  ever the sole route on a keyboard.
 
 ## Copy
 
