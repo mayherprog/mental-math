@@ -308,6 +308,18 @@ button.ghost:hover { color: var(--ink); border-color: var(--muted); }
   font-variant-numeric: tabular-nums;
 }
 #answer:focus { outline: none; border-color: var(--accent); }
+
+/* Keys the software keypad leaves out. Hidden where a real keyboard has
+   them, so the desktop layout gains nothing to look at or tab through. */
+.assist { display: none; gap: var(--s3); justify-content: center; }
+.assist button {
+  font-family: var(--mono); font-size: var(--t-lead); line-height: 1;
+  min-width: 3.5rem; padding: var(--s3) var(--s4);
+  background: var(--panel); border: 1px solid var(--rule); color: var(--ink);
+  border-radius: var(--r-md); cursor: pointer;
+}
+.assist button:active { border-color: var(--accent); }
+
 /* Submit control. Quiet on a keyboard, primary under a thumb. */
 #btnSubmit {
   font-family: var(--sans); font-size: var(--t-small); background: var(--panel);
@@ -318,6 +330,7 @@ button.ghost:hover { color: var(--ink); border-color: var(--muted); }
 /* Either signal is enough — matching too eagerly costs a slightly bolder
    button on a touchscreen laptop, matching too rarely strands a phone. */
 @media (pointer: coarse), (hover: none) {
+  .assist { display: flex; }
   #btnSubmit {
     font-size: var(--t-lead); padding: var(--s4) var(--s6);
     background: var(--accent); border-color: var(--accent); color: #fff;
@@ -506,6 +519,14 @@ footer code { font-family: var(--mono); }
     <div id="question">—</div>
     <input id="answer" type="text" inputmode="decimal" autocomplete="off"
            autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="your answer">
+    <!-- The phone keypad raised by inputmode="decimal" offers digits and a
+         decimal point only. Minus and slash are answer characters the parser
+         accepts and the hint below promises, so without these two keys a
+         negative or a fraction is untypeable on a touch device. -->
+    <div class="assist">
+      <button id="btnSign" type="button" aria-label="negative sign">±</button>
+      <button id="btnSlash" type="button" aria-label="fraction slash">/</button>
+    </div>
     <!-- The numeric keypad on iOS and Android has no return key, so a
          visible control is the only way to submit on a phone. Always
          rendered — never conditional — so no device can end up stranded. -->
@@ -1140,6 +1161,40 @@ $("btnSubmit").addEventListener("click", () => {
   submit();
   el.answer.focus();
 });
+
+/* The two keys the software keypad omits. They edit the field directly
+   rather than synthesising keystrokes, which no browser lets a page do to
+   an input. Same focus dance as Submit — suppressing mousedown is what
+   stops each tap from dismissing the keypad and costing a re-tap.
+
+   A tap counts as the start of answering: on a phone the sign is often
+   the first thing entered, and think time that ignored it would read as
+   faster than it was. */
+function assistKey(id, edit) {
+  const button = $(id);
+  button.addEventListener("mousedown", (e) => e.preventDefault());
+  button.addEventListener("click", () => {
+    if (state.running && state.firstKeyMs === null) state.firstKeyMs = performance.now();
+    const value = el.answer.value;
+    const start = el.answer.selectionStart ?? value.length;
+    const end = el.answer.selectionEnd ?? value.length;
+    const [next, caret] = edit(value, start, end);
+    el.answer.value = next;
+    el.answer.setSelectionRange(caret, caret);
+    el.answer.focus();
+  });
+}
+
+/* Minus is only legal leading, so the sign toggles the whole field rather
+   than inserting at the caret. The caret shifts with the text it sits in. */
+assistKey("btnSign", (value, start) => {
+  const negative = value.startsWith("-");
+  const next = negative ? value.slice(1) : `-${value}`;
+  return [next, Math.max(0, start + (negative ? -1 : 1))];
+});
+
+assistKey("btnSlash", (value, start, end) =>
+  [`${value.slice(0, start)}/${value.slice(end)}`, start + 1]);
 
 $("btnQuit").addEventListener("click", () => finish(false));
 
