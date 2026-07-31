@@ -309,16 +309,10 @@ button.ghost:hover { color: var(--ink); border-color: var(--muted); }
 }
 #answer:focus { outline: none; border-color: var(--accent); }
 
-/* Keys the software keypad leaves out. Hidden where a real keyboard has
-   them, so the desktop layout gains nothing to look at or tab through. */
-.assist { display: none; gap: var(--s3); justify-content: center; }
-.assist button {
-  font-family: var(--mono); font-size: var(--t-lead); line-height: 1;
-  min-width: 3.5rem; padding: var(--s3) var(--s4);
-  background: var(--panel); border: 1px solid var(--rule); color: var(--ink);
-  border-radius: var(--r-md); cursor: pointer;
-}
-.assist button:active { border-color: var(--accent); }
+/* The keys are hidden where a physical keyboard already has them, leaving
+   the pad as a plain wrapper around the submit button. */
+#pad { text-align: center; }
+.key { display: none; }
 
 /* Submit control. Quiet on a keyboard, primary under a thumb. */
 #btnSubmit {
@@ -330,14 +324,32 @@ button.ghost:hover { color: var(--ink); border-color: var(--muted); }
 /* Either signal is enough — matching too eagerly costs a slightly bolder
    button on a touchscreen laptop, matching too rarely strands a phone. */
 @media (pointer: coarse), (hover: none) {
-  .assist { display: flex; }
+  #pad {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2);
+    max-width: 21rem; margin: 0 auto;
+  }
+  .key {
+    display: flex; align-items: center; justify-content: center;
+    /* 44px is the smallest target Apple's guidelines allow. */
+    min-height: 3rem; font-family: var(--mono); font-size: var(--t-lead);
+    background: var(--panel); border: 1px solid var(--rule); color: var(--ink);
+    border-radius: var(--r-md); cursor: pointer;
+    /* A held key must not raise the copy menu or select its own label. */
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  /* The modifier column reads as a column without shouting over the digits. */
+  .key.mod { color: var(--accent); background: var(--ground); }
+  .key:active { border-color: var(--accent); }
   #btnSubmit {
     font-size: var(--t-lead); padding: var(--s4) var(--s6);
     background: var(--accent); border-color: var(--accent); color: #fff;
-    width: 100%; max-width: 14rem; font-weight: 600;
+    grid-column: span 2; font-weight: 600;
   }
   /* Keyboard-only instructions are noise on a touch device. */
   .hint .keys { display: none; }
+  /* The field is a display, not a target: no caret, no selection handles,
+     no magnifier, and nothing a tap can focus into. */
+  #answer { pointer-events: none; user-select: none; -webkit-user-select: none; }
 }
 
 .hint { text-align: center; color: var(--muted); font-size: var(--t-small); margin-top: var(--s6); }
@@ -519,23 +531,40 @@ footer code { font-family: var(--mono); }
     <div id="question">—</div>
     <input id="answer" type="text" inputmode="decimal" autocomplete="off"
            autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="your answer">
-    <!-- The phone keypad raised by inputmode="decimal" offers digits and a
-         decimal point only. Minus and slash are answer characters the parser
-         accepts and the hint below promises, so without these two keys a
-         negative or a fraction is untypeable on a touch device. -->
-    <div class="assist">
-      <button id="btnSign" type="button" aria-label="negative sign">±</button>
-      <button id="btnSlash" type="button" aria-label="fraction slash">/</button>
+    <!-- The system keypad omits minus and slash, both of which the parser
+         accepts, and it cannot be extended by a page. So on touch the page
+         supplies the whole pad and suppresses the system one.
+
+         Sixteen cells: ten digits, a point, a slash, a sign, a backspace,
+         and a two-cell submit. The right column is the modifier column,
+         nearest the thumb. Digits run 1-2-3 across the top, matching the
+         pad this replaces, so no finger position has to be relearned.
+
+         The submit button is a cell of this grid rather than a second
+         control, so it stays rendered on every device — a keyboard user
+         sees it alone, with the keys hidden. -->
+    <div id="pad">
+      <button class="key" type="button" data-ch="1">1</button>
+      <button class="key" type="button" data-ch="2">2</button>
+      <button class="key" type="button" data-ch="3">3</button>
+      <button class="key mod" type="button" data-act="back" aria-label="backspace">⌫</button>
+      <button class="key" type="button" data-ch="4">4</button>
+      <button class="key" type="button" data-ch="5">5</button>
+      <button class="key" type="button" data-ch="6">6</button>
+      <button class="key mod" type="button" data-act="sign" aria-label="negative sign">−</button>
+      <button class="key" type="button" data-ch="7">7</button>
+      <button class="key" type="button" data-ch="8">8</button>
+      <button class="key" type="button" data-ch="9">9</button>
+      <button class="key mod" type="button" data-ch="/" aria-label="fraction slash">/</button>
+      <button class="key" type="button" data-ch=".">.</button>
+      <button class="key" type="button" data-ch="0">0</button>
+      <button id="btnSubmit" type="button">Submit</button>
     </div>
-    <!-- The numeric keypad on iOS and Android has no return key, so a
-         visible control is the only way to submit on a phone. Always
-         rendered — never conditional — so no device can end up stranded. -->
-    <button id="btnSubmit" type="button">Submit</button>
   </div>
 
   <div class="drill-foot">
     <p class="hint">
-      Type a whole number, a decimal, or a fraction —
+      Enter a whole number, a decimal, or a fraction —
       <code>36</code>, <code>0.375</code>, <code>3/8</code> and <code>-12.5</code> all work.
       Leave it blank to skip.
       <span class="keys"><br><kbd>Enter</kbd> submits · <kbd>Esc</kbd> stops.</span>
@@ -905,7 +934,7 @@ function startWith({ count, seconds, seed, categories }) {
   show(el.drill);
   state.startMs = performance.now();
   renderQuestion();
-  el.answer.focus();
+  focusAnswer();
 
   clearInterval(state.tickHandle);
   state.tickHandle = setInterval(tick, 200);
@@ -1152,49 +1181,70 @@ el.answer.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); finish(false); }
 });
 
-/* Submitting by tap must not dismiss the keyboard, or every question
-   costs a re-tap on the input. Suppressing the default mousedown keeps
-   focus on the field; the explicit refocus covers browsers that blur
-   anyway, and runs inside the user gesture so iOS reopens the keypad. */
-$("btnSubmit").addEventListener("mousedown", (e) => e.preventDefault());
-$("btnSubmit").addEventListener("click", () => {
-  submit();
-  el.answer.focus();
-});
+/* Who supplies the keys. A physical keyboard already has every character
+   an answer needs, so it keeps the native field untouched. Touch gets the
+   page's own pad instead, and the system keypad is refused three ways:
+   inputmode="none" asks for no keyboard, readOnly denies one to browsers
+   that ignore inputmode, and pointer-events: none in the stylesheet means
+   no tap reaches the field to ask in the first place. Any one of the
+   three would usually do; a keypad sliding up over the pad is bad enough
+   to be worth the redundancy. */
+const PAD_MODE = matchMedia("(pointer: coarse), (hover: none)").matches;
 
-/* The two keys the software keypad omits. They edit the field directly
-   rather than synthesising keystrokes, which no browser lets a page do to
-   an input. Same focus dance as Submit — suppressing mousedown is what
-   stops each tap from dismissing the keypad and costing a re-tap.
-
-   A tap counts as the start of answering: on a phone the sign is often
-   the first thing entered, and think time that ignored it would read as
-   faster than it was. */
-function assistKey(id, edit) {
-  const button = $(id);
-  button.addEventListener("mousedown", (e) => e.preventDefault());
-  button.addEventListener("click", () => {
-    if (state.running && state.firstKeyMs === null) state.firstKeyMs = performance.now();
-    const value = el.answer.value;
-    const start = el.answer.selectionStart ?? value.length;
-    const end = el.answer.selectionEnd ?? value.length;
-    const [next, caret] = edit(value, start, end);
-    el.answer.value = next;
-    el.answer.setSelectionRange(caret, caret);
-    el.answer.focus();
-  });
+if (PAD_MODE) {
+  el.answer.setAttribute("inputmode", "none");
+  el.answer.readOnly = true;
 }
 
-/* Minus is only legal leading, so the sign toggles the whole field rather
-   than inserting at the caret. The caret shifts with the text it sits in. */
-assistKey("btnSign", (value, start) => {
-  const negative = value.startsWith("-");
-  const next = negative ? value.slice(1) : `-${value}`;
-  return [next, Math.max(0, start + (negative ? -1 : 1))];
+/* Focus belongs on the field only where the field is what gets typed
+   into. In pad mode, focusing it is precisely what would raise a keypad. */
+function focusAnswer() { if (!PAD_MODE) el.answer.focus(); }
+
+/* A pad only ever appends or deletes at the end, so there is no caret to
+   place — which is also why the sign key can rewrite the whole field. */
+function setAnswer(next) {
+  el.answer.value = next;
+  if (!PAD_MODE) el.answer.setSelectionRange(next.length, next.length);
+}
+
+function padEdit(action, char) {
+  if (!state.running) return;
+  // Think time is the moment answering began, even if that key was a typo.
+  if (state.firstKeyMs === null) state.firstKeyMs = performance.now();
+  const value = el.answer.value;
+  if (action === "back") return setAnswer(value.slice(0, -1));
+  // Minus is only legal leading, so the sign toggles rather than inserts.
+  if (action === "sign") {
+    return setAnswer(value.startsWith("-") ? value.slice(1) : `-${value}`);
+  }
+  setAnswer(value + char);
+}
+
+for (const key of document.querySelectorAll(".key")) {
+  key.addEventListener("click", () => padEdit(key.dataset.act, key.dataset.ch));
+}
+
+$("btnSubmit").addEventListener("click", () => {
+  submit();
+  focusAnswer();
 });
 
-assistKey("btnSlash", (value, start, end) =>
-  [`${value.slice(0, start)}/${value.slice(end)}`, start + 1]);
+/* A keyboard attached to a touch device — an iPad case, a touchscreen
+   laptop — must still be able to type. The field cannot take those
+   keystrokes in pad mode, so the document takes them and routes them
+   through the same edits the keys use. */
+if (PAD_MODE) {
+  document.addEventListener("keydown", (e) => {
+    if (!state.running || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Enter") { e.preventDefault(); submit(); return; }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); return; }
+    if (e.key === "Backspace") { e.preventDefault(); padEdit("back"); return; }
+    if (e.key.length === 1 && !BAD_CHAR.test(e.key)) {
+      e.preventDefault();
+      padEdit(null, e.key);
+    }
+  });
+}
 
 $("btnQuit").addEventListener("click", () => finish(false));
 
