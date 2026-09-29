@@ -1,0 +1,8 @@
+# index.html and adaptive.html are single-file browser apps, written by hand —
+# nothing in this repository is generated or vendored. They are classified as
+# JavaScript for the language bar because the embedded scripts are the
+# substance of each file (54% and 68% of the bytes respectively; markup is the
+# smallest share). The classification is a display override, not a provenance
+# claim.
+index.html linguist-language=JavaScript
+adaptive.html linguist-language=JavaScript
