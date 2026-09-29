@@ -28,12 +28,17 @@
   --ground: #f3f1ed;
   --panel:  #ffffff;
   --ink:    #2b2724;
-  --muted:  #7a736c;
+  --muted:  #716a63;
   --rule:   #e3ded7;
-  --accent: #1f8a6d;
+  --accent: #19765c;
   --accent-soft: #ddf0e8;
-  --warn:   #b06a1f;
+  --warn:   #9d5d15;
   --wrong:  #b34a3a;
+
+  /* Contrast: --muted, --accent and --warn are the darkest each can sit while
+     clearing 4.5:1 on --ground at 14px. Text on an accent fill is var(--ground),
+     never #fff — white fails badly on the light-green dark-mode accent (2.03:1).
+     Verified, not eyeballed; re-run the check if any of these three move. */
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -60,9 +65,9 @@
   }
 }
 :root[data-theme="light"] {
-  --ground: #f3f1ed; --panel: #ffffff; --ink: #2b2724; --muted: #7a736c;
-  --rule: #e3ded7; --accent: #1f8a6d; --accent-soft: #ddf0e8;
-  --warn: #b06a1f; --wrong: #b34a3a;
+  --ground: #f3f1ed; --panel: #ffffff; --ink: #2b2724; --muted: #716a63;
+  --rule: #e3ded7; --accent: #19765c; --accent-soft: #ddf0e8;
+  --warn: #9d5d15; --wrong: #b34a3a;
 }
 :root[data-theme="dark"] {
   --ground: #22201d; --panel: #2c2926; --ink: #f2efe9; --muted: #a79f96;
@@ -246,7 +251,7 @@ details.panel[open] > summary {
 
 button.primary {
   font-family: var(--sans); font-size: var(--t-body); font-weight: 600;
-  background: var(--accent); color: #fff; border: none;
+  background: var(--accent); color: var(--ground); border: none;
   border-radius: var(--r-pill); padding: var(--s3) var(--s6); cursor: pointer;
 }
 button.primary:hover { filter: brightness(1.08); }
@@ -342,7 +347,7 @@ button.ghost:hover { color: var(--ink); border-color: var(--muted); }
   .key:active { border-color: var(--accent); }
   #btnSubmit {
     font-size: var(--t-lead); padding: var(--s4) var(--s6);
-    background: var(--accent); border-color: var(--accent); color: #fff;
+    background: var(--accent); border-color: var(--accent); color: var(--ground);
     grid-column: span 2; font-weight: 600;
   }
   /* Keyboard-only instructions are noise on a touch device. */
