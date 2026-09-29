@@ -1,7 +1,17 @@
-# mental-math
+# [mental-math](https://mayherprog.github.io/mental-math)
+
+[![tests](https://github.com/mayherprog/mental-math/actions/workflows/tests.yml/badge.svg)](https://github.com/mayherprog/mental-math/actions/workflows/tests.yml)
 
 A timed arithmetic drill that records every answer, so improvement is measured
-rather than felt.
+rather than felt. Live at
+[mayherprog.github.io/mental-math](https://mayherprog.github.io/mental-math).
+
+Grading is exact rational arithmetic throughout — every answer a ratio of two
+integers, never a float. Both pages carry their own embedded test suites:
+[index.html?selftest](https://mayherprog.github.io/mental-math/index.html?selftest)
+(52 assertions) and
+[adaptive.html?selftest](https://mayherprog.github.io/mental-math/adaptive.html?selftest)
+(66 assertions).
 
 Several trading firms screen candidates with a fast, no-calculator arithmetic
 test before any interview. This tool does not claim to reproduce any firm's
