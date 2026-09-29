@@ -1,0 +1,1792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing is loaded from anywhere and nothing is sent anywhere. With
+     default-src 'none' and no connect-src, this page cannot make a network
+     request at all, even if something were injected into it. That is a
+     property you can check in devtools rather than a promise in a README. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>mental-math — adaptive drill</title>
+<meta name="description" content="A timed arithmetic drill that adapts its difficulty to how you are performing, and explains the mistakes the score cannot.">
+<style>
+/* ============================================================
+   Design tokens — carried over from index.html unchanged, so the
+   two pages read as one product. See DESIGN.md for why these
+   values are what they are.
+   ============================================================ */
+:root {
+  --ground: #f3f1ed;
+  --panel:  #ffffff;
+  --ink:    #2b2724;
+  --muted:  #716a63;
+  --rule:   #e3ded7;
+  --accent: #19765c;
+  --accent-soft: #ddf0e8;
+  --warn:   #9d5d15;
+  --wrong:  #b34a3a;
+
+  /* Contrast: --muted, --accent and --warn are the darkest each can sit while
+     clearing 4.5:1 on --ground at 14px. Text on an accent fill is var(--ground),
+     never #fff — white fails badly on the light-green dark-mode accent (2.03:1).
+     Verified, not eyeballed; re-run the check if any of these three move. */
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  --t-micro: .75rem;
+  --t-small: .875rem;
+  --t-body:  1rem;
+  --t-lead:  1.125rem;
+  --t-stat:  1.75rem;
+
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+
+  --s1: .25rem; --s2: .5rem; --s3: .75rem; --s4: 1rem;
+  --s5: 1.5rem; --s6: 2rem; --s7: 3rem; --s8: 4.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #22201d; --panel: #2c2926; --ink: #f2efe9; --muted: #a79f96;
+    --rule: #3d3833; --accent: #5cc9a3; --accent-soft: #2d463e;
+    --warn: #e0a55c; --wrong: #e0897a;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #f3f1ed; --panel: #ffffff; --ink: #2b2724; --muted: #716a63;
+  --rule: #e3ded7; --accent: #19765c; --accent-soft: #ddf0e8;
+  --warn: #9d5d15; --wrong: #b34a3a;
+}
+:root[data-theme="dark"] {
+  --ground: #22201d; --panel: #2c2926; --ink: #f2efe9; --muted: #a79f96;
+  --rule: #3d3833; --accent: #5cc9a3; --accent-soft: #2d463e;
+  --warn: #e0a55c; --wrong: #e0897a;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--ground); color: var(--ink); font-family: var(--sans);
+  font-size: 16px; line-height: 1.55; -webkit-text-size-adjust: 100%;
+}
+main { max-width: 40rem; margin: 0 auto; padding: var(--s5) var(--s4) var(--s8); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+header { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s6); flex-wrap: wrap; }
+header h1 { font-size: var(--t-lead); font-weight: 650; margin: 0; letter-spacing: -.01em; }
+header p { margin: 0; color: var(--muted); font-size: var(--t-small); flex: 1 1 12rem; }
+#themeToggle {
+  background: var(--panel); border: 1px solid var(--rule); color: var(--muted);
+  border-radius: var(--r-pill); padding: var(--s2) var(--s3); font-size: var(--t-small);
+  cursor: pointer; font-family: var(--sans);
+  display: inline-flex; align-items: center; gap: var(--s2); line-height: 1;
+}
+#themeToggle:hover { color: var(--ink); border-color: var(--muted); }
+#themeToggle .ico { width: .85rem; height: .85rem; }
+.ico-sun  { display: none; }
+.ico-moon { display: block; }
+@media (prefers-color-scheme: dark) { .ico-sun { display: block; } .ico-moon { display: none; } }
+:root[data-theme="light"] .ico-sun  { display: none; }
+:root[data-theme="light"] .ico-moon { display: block; }
+:root[data-theme="dark"]  .ico-sun  { display: block; }
+:root[data-theme="dark"]  .ico-moon { display: none; }
+
+/* ---------- landing ---------- */
+.ready { padding: var(--s5) 0 var(--s6); }
+.ready-title {
+  font-size: clamp(1.75rem, 6vw, 2.5rem); font-weight: 650;
+  letter-spacing: -.02em; margin: 0 0 var(--s2); text-wrap: balance;
+}
+.ready-line { font-size: var(--t-lead); color: var(--muted); margin: 0 0 var(--s5); }
+.ready-line .hl { color: var(--ink); font-weight: 650; }
+.ready-go { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.ready-go .primary { font-size: var(--t-lead); padding: var(--s4) var(--s7); }
+.ready-go .note { margin: 0; }
+.ready-go kbd {
+  font-family: var(--mono); border: 1px solid var(--rule); padding: 0 var(--s1);
+  border-radius: var(--r-sm); color: var(--ink);
+}
+
+.panel {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: var(--s4); margin: 0 0 var(--s3);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.panel .note { margin: 0; }
+details.panel { display: block; padding: 0; }
+details.panel > summary {
+  list-style: none; cursor: pointer; padding: var(--s4);
+  display: flex; align-items: center; gap: var(--s3);
+  font-size: var(--t-body); font-weight: 550; color: var(--ink);
+  border-radius: var(--r-md);
+}
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary:hover { background: var(--accent-soft); }
+details.panel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sum-label { flex: 1 1 auto; }
+.sum-state { color: var(--muted); font-weight: 400; font-size: var(--t-small); }
+details.panel > summary::after {
+  content: ""; width: .5rem; height: .5rem; flex: none; color: var(--muted);
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(45deg) translate(-2px, -2px); transition: transform .15s ease;
+}
+details.panel[open] > summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+details.panel[open] > summary {
+  border-bottom: 1px solid var(--rule); border-radius: var(--r-md) var(--r-md) 0 0;
+}
+.panel-body { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
+
+#aboutPanel { margin-top: var(--s7); background: none; border-color: var(--rule); }
+#aboutPanel > summary { color: var(--muted); }
+#aboutPanel > summary:hover { color: var(--ink); }
+#aboutPanel[open] > summary { border-bottom-color: var(--rule); }
+#aboutPanel p { margin: 0 0 var(--s3); font-size: var(--t-small); color: var(--muted); }
+#aboutPanel p:last-child { margin-bottom: 0; }
+#aboutPanel strong { color: var(--ink); font-weight: 600; }
+#aboutPanel code { font-family: var(--mono); color: var(--ink); }
+
+.switch {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  font-size: var(--t-small); color: var(--muted); cursor: pointer;
+  user-select: none; align-self: flex-start;
+}
+.switch input { width: 1rem; height: 1rem; accent-color: var(--accent); margin: 0; }
+.switch:has(input:checked) { color: var(--ink); }
+
+.row { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: var(--s1); }
+.field label { font-size: var(--t-small); color: var(--muted); }
+.field input[type="number"], .field input[type="text"], .field input[type="password"] {
+  font-family: var(--mono); font-size: var(--t-lead); width: 6.5rem;
+  padding: var(--s3); border: 2px solid var(--rule); border-radius: var(--r-sm);
+  background: var(--ground); color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.field.wide { flex: 1 1 18rem; }
+.field.wide input { width: 100%; font-size: var(--t-body); }
+.field input:focus { border-color: var(--accent); outline: none; background: var(--panel); }
+
+.cats { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.cats label {
+  font-size: var(--t-small); cursor: pointer; border: 1px solid var(--rule);
+  border-radius: var(--r-pill); padding: var(--s2) var(--s4); color: var(--muted);
+  user-select: none; background: var(--ground);
+}
+.cats label:hover { border-color: var(--muted); color: var(--ink); }
+.cats input { position: absolute; opacity: 0; pointer-events: none; }
+.cats label:has(input:checked) {
+  border-color: var(--accent); color: var(--accent);
+  background: var(--accent-soft); font-weight: 600;
+}
+.cats label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button.primary {
+  font-family: var(--sans); font-size: var(--t-body); font-weight: 600;
+  background: var(--accent); color: var(--ground); border: none;
+  border-radius: var(--r-pill); padding: var(--s3) var(--s6); cursor: pointer;
+}
+button.primary:hover { filter: brightness(1.08); }
+button.primary:active { transform: translateY(1px); }
+button.ghost {
+  font-family: var(--sans); font-size: var(--t-small); background: var(--panel);
+  color: var(--muted); border: 1px solid var(--rule);
+  border-radius: var(--r-pill); padding: var(--s2) var(--s5); cursor: pointer;
+}
+button.ghost:hover { color: var(--ink); border-color: var(--muted); }
+.actions { display: flex; gap: var(--s3); align-items: center; flex-wrap: wrap; margin-top: var(--s4); }
+
+/* ---------- drill ---------- */
+body.drilling header, body.drilling footer { display: none; }
+body.drilling main { max-width: none; padding: 0; }
+#drill {
+  min-height: 100dvh; display: flex; flex-direction: column;
+  padding: var(--s5) var(--s4) var(--s5); max-width: 44rem; margin: 0 auto;
+}
+.drill-core {
+  flex: 1 1 auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--s5);
+}
+.drill-foot { display: flex; flex-direction: column; align-items: center; gap: var(--s4); }
+.bar { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--t-small); color: var(--muted); }
+#clock { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--t-body); color: var(--muted); }
+#clock.low { color: var(--warn); font-weight: 600; }
+#clock.hidden-clock { visibility: hidden; }
+.track { height: 6px; background: var(--rule); margin: var(--s2) 0 0; overflow: hidden; border-radius: var(--r-pill); }
+.track > div { height: 100%; background: var(--accent); width: 0; transition: width .15s linear; border-radius: var(--r-pill); }
+
+/* The level strip. Difficulty is a fact about the session, so it is
+   visible — but quiet, and never where the question is. */
+.level-strip {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--s2); font-size: var(--t-micro); color: var(--muted);
+  min-height: 1.4rem; text-align: center;
+}
+.level-strip .pips { display: inline-flex; gap: 2px; }
+.level-strip .pip { width: 5px; height: 5px; border-radius: 50%; background: var(--rule); }
+.level-strip .pip.lit { background: var(--accent); }
+.level-strip .cat { color: var(--ink); font-weight: 600; }
+
+#question {
+  font-family: var(--sans); font-size: clamp(2.5rem, 12vw, 4.5rem); font-weight: 600;
+  letter-spacing: -.03em; text-align: center; margin: 0;
+  word-break: break-word; font-variant-numeric: tabular-nums; line-height: 1.1;
+  text-wrap: balance;
+}
+#answer {
+  font-family: var(--mono); font-size: clamp(1.75rem, 7vw, 2.5rem); text-align: center;
+  width: 100%; max-width: 12rem; margin: 0 auto; display: block;
+  padding: var(--s3); background: var(--panel); color: var(--ink);
+  border: 2px solid var(--rule); border-radius: var(--r-md);
+  font-variant-numeric: tabular-nums;
+}
+#answer:focus { outline: none; border-color: var(--accent); }
+
+#pad { text-align: center; }
+.key { display: none; }
+#btnSubmit {
+  font-family: var(--sans); font-size: var(--t-small); background: var(--panel);
+  border: 1px solid var(--rule); color: var(--muted); border-radius: var(--r-pill);
+  padding: var(--s2) var(--s5); cursor: pointer;
+}
+#btnSubmit:hover { color: var(--ink); border-color: var(--muted); }
+@media (pointer: coarse), (hover: none) {
+  #pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); max-width: 21rem; margin: 0 auto; }
+  .key {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 3rem; font-family: var(--mono); font-size: var(--t-lead);
+    background: var(--panel); border: 1px solid var(--rule); color: var(--ink);
+    border-radius: var(--r-md); cursor: pointer;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .key.mod { color: var(--accent); background: var(--ground); }
+  .key:active { border-color: var(--accent); }
+  #btnSubmit {
+    font-size: var(--t-lead); padding: var(--s4) var(--s6);
+    background: var(--accent); border-color: var(--accent); color: var(--ground);
+    grid-column: span 2; font-weight: 600;
+  }
+  .hint .keys { display: none; }
+  #answer { pointer-events: none; user-select: none; -webkit-user-select: none; }
+}
+.hint { text-align: center; color: var(--muted); font-size: var(--t-small); margin-top: var(--s5); }
+.hint kbd { font-family: var(--mono); border: 1px solid var(--rule); border-radius: 0; padding: 0 var(--s1); color: var(--ink); }
+.hint code { font-family: var(--mono); color: var(--ink); }
+
+/* ---------- results ---------- */
+.headline {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--s4) var(--s5); margin: 0 0 var(--s6);
+  background: var(--panel); border: 1px solid var(--rule);
+  border-radius: var(--r-lg); padding: var(--s5);
+}
+.stat { display: flex; flex-direction: column; gap: var(--s1); }
+.stat .k { font-size: var(--t-small); color: var(--muted); line-height: 1.25; min-height: 2.5em; }
+.stat.lead .k { min-height: 0; }
+.stat .v { font-family: var(--mono); font-size: var(--t-stat); font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.stat.lead { grid-column: 1 / -1; }
+.stat.lead .v { font-size: clamp(2.5rem, 11vw, 3.5rem); color: var(--accent); letter-spacing: -.03em; }
+
+table { width: 100%; border-collapse: collapse; font-size: var(--t-small); }
+th, td {
+  text-align: right; padding: var(--s3) var(--s2);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+th:first-child, td:first-child { text-align: left; font-family: var(--sans); }
+th { color: var(--muted); font-weight: 500; font-size: var(--t-small); font-family: var(--sans); }
+tbody tr:last-child td { border-bottom: none; }
+td.meter { width: 20%; padding-left: var(--s3); }
+.catbar { height: 8px; background: var(--rule); display: block; border-radius: var(--r-pill); overflow: hidden; }
+.catbar > i { display: block; height: 100%; background: var(--accent); border-radius: var(--r-pill); }
+tr.slowest .catbar > i { background: var(--warn); }
+tr.slowest td:first-child { color: var(--warn); }
+
+.note { color: var(--muted); font-size: var(--t-small); margin: var(--s3) 0 0; }
+.note strong { color: var(--ink); font-weight: 600; }
+.note.warn { color: var(--warn); }
+.missed {
+  font-family: var(--mono); font-size: var(--t-small); margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s4); list-style: none;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-md);
+}
+.missed li { padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+.missed li:last-child { border-bottom: none; }
+.missed .headline-row { display: flex; justify-content: space-between; gap: var(--s4); }
+.missed .given { color: var(--wrong); }
+.missed .skipped { color: var(--muted); }
+/* The diagnosis is the thing arithmetic cannot produce, so it gets its
+   own line in the reading typeface rather than being crammed into mono. */
+.missed .slip {
+  display: block; font-family: var(--sans); color: var(--muted);
+  margin-top: var(--s1); line-height: 1.4;
+}
+
+h2 { font-size: var(--t-body); color: var(--ink); font-weight: 600; margin: var(--s6) 0 var(--s2); }
+
+.debrief {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: var(--s5); margin-top: var(--s2);
+  white-space: pre-wrap; font-size: var(--t-small); line-height: 1.65;
+}
+.debrief.pending { color: var(--muted); font-style: italic; }
+
+footer {
+  margin-top: var(--s7); padding-top: var(--s4);
+  border-top: 1px solid var(--rule); color: var(--muted); font-size: var(--t-small);
+}
+footer code { font-family: var(--mono); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>mental-math</h1>
+  <p>An arithmetic drill that adapts to how you are doing.</p>
+  <button id="themeToggle" type="button"
+          title="Switch between light and dark" aria-label="Switch between light and dark">
+    <svg class="ico ico-sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 .6v2.4M8 13v2.4M.6 8h2.4M13 8h2.4M2.8 2.8l1.7 1.7M11.5 11.5l1.7 1.7M13.2 2.8l-1.7 1.7M4.5 11.5l-1.7 1.7"
+            stroke="currentColor" stroke-width="1.4" stroke-linecap="square"/>
+    </svg>
+    <svg class="ico ico-moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M13.4 10.4A5.7 5.7 0 0 1 5.6 2.6a5.7 5.7 0 1 0 7.8 7.8z"
+            fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>
+    <span>theme</span>
+  </button>
+</header>
+
+<!-- ============================= START ============================= -->
+<section id="start">
+  <div class="ready">
+    <h2 class="ready-title">Ready when you are</h2>
+    <p class="ready-line">
+      <span class="hl" id="readyCount">80</span> questions in
+      <span class="hl" id="readyClock">8 minutes</span>, getting harder or easier as you go.
+    </p>
+    <div class="ready-go">
+      <button class="primary" id="btnStart" type="button">Start</button>
+      <p class="note"><kbd>Enter</kbd> submits. A blank answer skips.</p>
+    </div>
+  </div>
+
+  <details class="panel" id="lengthPanel">
+    <summary>
+      <span class="sum-label">Length</span>
+      <span class="sum-state" id="lengthState">80 questions · 8:00</span>
+    </summary>
+    <div class="panel-body">
+      <div class="row">
+        <div class="field">
+          <label for="optCount">Questions</label>
+          <input id="optCount" type="number" min="1" max="500" value="80" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="optSeconds">Seconds</label>
+          <input id="optSeconds" type="number" min="10" max="7200" value="480" inputmode="numeric">
+        </div>
+      </div>
+      <label class="switch"><input type="checkbox" id="optHideClock"><span>Hide the countdown</span></label>
+    </div>
+  </details>
+
+  <details class="panel" id="topicPanel">
+    <summary>
+      <span class="sum-label">Topics</span>
+      <span class="sum-state" id="topicState">all topics</span>
+    </summary>
+    <div class="panel-body"><div class="cats" id="catList"></div></div>
+  </details>
+
+  <details class="panel" id="aboutPanel">
+    <summary><span class="sum-label">How the adapting works</span></summary>
+    <div class="panel-body">
+      <p><strong>Grading never involves the model.</strong> Every answer is compared as an
+      exact rational number, the same way <code>index.html</code> and the Python package do
+      it. <code>0.1 + 0.2</code> grades as <code>0.3</code>. A language model is not in that
+      path and cannot be: it would be slower and occasionally wrong at the one job the
+      arithmetic already does perfectly.</p>
+
+      <p><strong>Difficulty is chosen locally, in microseconds.</strong> Each topic carries a
+      rating from 1 to 5. After every answer the rating moves by how you did against a target
+      time for that topic at that level: fast and right pushes it up, wrong pushes it down,
+      right but slow drifts down gently. The next question is generated at the rounded rating.
+      This runs with no network and no waiting, because a timed drill cannot afford to block
+      on an HTTP request between questions.</p>
+
+      <p><strong>Mistakes are diagnosed by rules that must reproduce your answer.</strong>
+      Each rule in the catalogue reconstructs the wrong result its slip would cause: a borrow
+      dropped in subtraction, a partial product left unshifted, a numerator and denominator
+      swapped. A rule is only reported if the number it generates equals, exactly, the number
+      you typed. That is the difference from asking a model what went wrong: a mechanism that
+      does not produce your digits can never be offered. When nothing matches, the page says
+      so rather than inventing a reason.</p>
+
+      <p><strong>Check the claims rather than trust them.</strong> Append
+      <code>?selftest</code> to the URL: it covers the exact arithmetic, round-half-to-even,
+      answer parsing, exactness of division at every difficulty level, monotonic difficulty,
+      and a worked case for every diagnosis rule.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================= DRILL ============================= -->
+<section id="drill" hidden>
+  <div>
+    <div class="bar">
+      <span id="counter">1 / 80</span>
+      <span id="clock">8:00</span>
+    </div>
+    <div class="track"><div id="progressFill"></div></div>
+  </div>
+
+  <div class="drill-core">
+    <div class="level-strip" id="levelStrip"></div>
+    <div id="question">—</div>
+    <input id="answer" type="text" inputmode="decimal" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false"
+           aria-label="Your answer">
+  </div>
+
+  <div class="drill-foot">
+    <div id="pad">
+      <button class="key" type="button" data-key="7">7</button>
+      <button class="key" type="button" data-key="8">8</button>
+      <button class="key" type="button" data-key="9">9</button>
+      <button class="key mod" type="button" data-key="-">−</button>
+      <button class="key" type="button" data-key="4">4</button>
+      <button class="key" type="button" data-key="5">5</button>
+      <button class="key" type="button" data-key="6">6</button>
+      <button class="key mod" type="button" data-key="/">/</button>
+      <button class="key" type="button" data-key="1">1</button>
+      <button class="key" type="button" data-key="2">2</button>
+      <button class="key" type="button" data-key="3">3</button>
+      <button class="key mod" type="button" data-key="back">⌫</button>
+      <button class="key" type="button" data-key="0">0</button>
+      <button class="key" type="button" data-key=".">.</button>
+      <button id="btnSubmit" type="button">Submit</button>
+    </div>
+    <p class="hint">
+      <span class="keys"><kbd>Enter</kbd> submits · blank skips · </span>
+      <code>36</code>, <code>0.375</code>, <code>3/8</code>, <code>-12.5</code>
+    </p>
+    <button class="ghost" id="btnQuit" type="button">Quit</button>
+  </div>
+</section>
+
+<!-- ============================ RESULTS ============================ -->
+<section id="results" hidden>
+  <div class="headline" id="headline"></div>
+
+  <h2>Where the clock went</h2>
+  <table>
+    <thead>
+      <tr><th>topic</th><th>n</th><th>level</th><th>acc</th><th>think</th><th>total</th><th></th></tr>
+    </thead>
+    <tbody id="catRows"></tbody>
+  </table>
+
+  <div id="missedBlock" hidden>
+    <h2 id="missedHeading">Missed</h2>
+    <ul class="missed" id="missedList"></ul>
+  </div>
+
+  <div id="debriefBlock" hidden>
+    <h2>What to drill next</h2>
+    <div class="debrief" id="debrief"></div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="btnHome" type="button">Home</button>
+    <button class="ghost" id="btnAgain" type="button">Again, from these levels</button>
+  </div>
+  <p class="note" id="seedNote"></p>
+</section>
+
+<footer>
+  Saved to this browser only. Nothing is sent anywhere: this page cannot make a
+  network request. Append <code>?selftest</code> to check the arithmetic.
+</footer>
+
+</main>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Exact rational arithmetic.
+
+   Ported verbatim from index.html, which is itself a port of
+   mentalmath/generator.py. Grading is the one thing on this page
+   that must never be approximate and must never involve a model:
+   0.1 + 0.2 has to grade as 0.3, and a BigInt ratio is the only
+   way to guarantee that in a browser.
+   ============================================================ */
+
+function bgcd(a, b) {
+  if (a < 0n) a = -a;
+  if (b < 0n) b = -b;
+  while (b) { const t = a % b; a = b; b = t; }
+  return a;
+}
+
+class Frac {
+  constructor(n, d = 1n) {
+    n = BigInt(n); d = BigInt(d);
+    if (d === 0n) throw new RangeError("zero denominator");
+    if (d < 0n) { n = -n; d = -d; }
+    const g = bgcd(n, d) || 1n;
+    this.n = n / g;
+    this.d = d / g;
+  }
+  add(o) { return new Frac(this.n * o.d + o.n * this.d, this.d * o.d); }
+  sub(o) { return new Frac(this.n * o.d - o.n * this.d, this.d * o.d); }
+  mul(o) { return new Frac(this.n * o.n, this.d * o.d); }
+  eq(o)  { return this.n === o.n && this.d === o.d; }
+  toNumber() { return Number(this.n) / Number(this.d); }
+}
+
+const F = (n, d = 1n) => new Frac(n, d);
+
+/* Nearest integer, ties to even — matching Python's round() on a
+   Fraction, so the two implementations agree on exact .5 cases. */
+function roundHalfEven(f) {
+  let q = f.n / f.d;
+  const r = f.n - q * f.d;
+  if (r === 0n) return q;
+  const twice = (r < 0n ? -r : r) * 2n;
+  const negative = f.n < 0n;
+  let step = false;
+  if (twice > f.d) step = true;
+  else if (twice === f.d) step = (q % 2n !== 0n);
+  if (step) q = negative ? q - 1n : q + 1n;
+  return q;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const randint = (rnd, lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+const choice = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+/* ============================================================
+   Leveled question generation.
+
+   index.html has one difficulty per category. Here each category
+   is a function of a level from 1 to 5, because "adapt the
+   difficulty" needs something to actually turn. Level 3 is
+   deliberately the range index.html uses, so a session that never
+   moves off the default is the same drill as the fixed version.
+
+   Every level of divide still resolves exactly, and every decimal
+   is built as an integer over a power of ten. Difficulty changes
+   the size of the numbers, never the exactness.
+   ============================================================ */
+
+const CATEGORIES = ["add_sub", "multiply", "divide", "decimal", "percent", "fraction"];
+
+const CATEGORY_LABEL = {
+  add_sub: "add / subtract",
+  multiply: "multiply",
+  divide: "divide",
+  decimal: "decimals",
+  percent: "percentages",
+  fraction: "fractions",
+};
+
+const DEFAULT_WEIGHTS = {
+  add_sub: 0.22, multiply: 0.26, divide: 0.20,
+  decimal: 0.14, percent: 0.10, fraction: 0.08,
+};
+
+const MIN_LEVEL = 1, MAX_LEVEL = 5;
+
+/* Operand ranges by level. Index 0 is level 1. */
+const RANGES = {
+  add_sub: [
+    { lo: 10,  hi: 99,   subChance: 0.35, negChance: 0.00 },
+    { lo: 15,  hi: 299,  subChance: 0.40, negChance: 0.10 },
+    { lo: 17,  hi: 899,  subChance: 0.45, negChance: 0.25 },
+    { lo: 120, hi: 1999, subChance: 0.50, negChance: 0.30 },
+    { lo: 450, hi: 8999, subChance: 0.55, negChance: 0.35 },
+  ],
+  divide: [
+    { dLo: 2,  dHi: 9,  qLo: 2,  qHi: 12 },
+    { dLo: 3,  dHi: 12, qLo: 3,  qHi: 25 },
+    { dLo: 3,  dHi: 25, qLo: 4,  qHi: 60 },
+    { dLo: 7,  dHi: 40, qLo: 8,  qHi: 99 },
+    { dLo: 11, dHi: 60, qLo: 15, qHi: 199 },
+  ],
+};
+
+const BUILDERS = {
+  add_sub(rnd, level) {
+    const r = RANGES.add_sub[level - 1];
+    let a = randint(rnd, r.lo, r.hi);
+    let b = randint(rnd, r.lo, r.hi);
+    if (rnd() < r.subChance) {
+      // Sometimes order the operands so the answer crosses into negatives.
+      if (rnd() < r.negChance) { const lo = Math.min(a, b), hi = Math.max(a, b); a = lo; b = hi; }
+      return { prompt: `${a} − ${b}`, answer: F(BigInt(a - b)), category: "add_sub", places: null, level };
+    }
+    return { prompt: `${a} + ${b}`, answer: F(BigInt(a + b)), category: "add_sub", places: null, level };
+  },
+
+  multiply(rnd, level) {
+    let a, b;
+    if (level === 1)      { a = randint(rnd, 11, 29);  b = randint(rnd, 2, 5); }
+    else if (level === 2) { a = randint(rnd, 11, 99);  b = randint(rnd, 3, 9); }
+    else if (level === 3) {
+      // Level 3 reproduces index.html's mix exactly.
+      const style = rnd();
+      if (style < 0.45)      { a = randint(rnd, 11, 99);   b = randint(rnd, 3, 9); }
+      else if (style < 0.85) { a = randint(rnd, 11, 49);   b = randint(rnd, 11, 29); }
+      else                   { a = randint(rnd, 101, 499); b = randint(rnd, 3, 9); }
+    }
+    else if (level === 4) { a = randint(rnd, 101, 499); b = randint(rnd, 4, 19); }
+    else                  { a = randint(rnd, 21, 99);   b = randint(rnd, 21, 99); }
+    return { prompt: `${a} × ${b}`, answer: F(BigInt(a * b)), category: "multiply", places: null, level };
+  },
+
+  divide(rnd, level) {
+    // Always built as divisor × quotient, so it resolves exactly at every level.
+    const r = RANGES.divide[level - 1];
+    const divisor = randint(rnd, r.dLo, r.dHi);
+    const quotient = randint(rnd, r.qLo, r.qHi);
+    return {
+      prompt: `${divisor * quotient} ÷ ${divisor}`,
+      answer: F(BigInt(quotient)), category: "divide", places: null, level,
+    };
+  },
+
+  decimal(rnd, level) {
+    // Built as an integer over a power of ten, so the value is exact and
+    // the prompt string is that value, not a float rendering of it.
+    let places, lo, hi;
+    if (level === 1)      { places = 1; lo = 15;   hi = 99; }
+    else if (level === 2) { places = 2; lo = 105;  hi = 999; }
+    else if (level === 3) { places = 2; lo = 105;  hi = 9950; }
+    else if (level === 4) { places = 2; lo = 1005; hi = 99950; }
+    else                  { places = 3; lo = 1005; hi = 99950; }
+    const scale = 10n ** BigInt(places);
+    const ai = randint(rnd, lo, hi), bi = randint(rnd, lo, hi);
+    const a = F(BigInt(ai), scale), b = F(BigInt(bi), scale);
+    const sa = renderScaled(BigInt(ai), places), sb = renderScaled(BigInt(bi), places);
+    if (rnd() < 0.5) return { prompt: `${sa} + ${sb}`, answer: a.add(b), category: "decimal", places, level };
+    return { prompt: `${sa} − ${sb}`, answer: a.sub(b), category: "decimal", places, level };
+  },
+
+  percent(rnd, level) {
+    // pctTenths is the percentage times ten, so 12.5% is 125 and the answer
+    // stays an exact ratio: base * pctTenths / 1000.
+    let pctTenths, base;
+    if (level === 1) {
+      pctTenths = choice(rnd, [100, 250, 500]);
+      base = choice(rnd, [40, 60, 80, 200, 400]);
+    } else if (level === 2) {
+      pctTenths = choice(rnd, [50, 100, 200, 250, 500, 750]);
+      base = choice(rnd, [40, 60, 80, 120, 240, 480]);
+    } else if (level === 3) {
+      pctTenths = choice(rnd, [50, 100, 120, 150, 200, 250, 300, 400, 600, 750, 800, 1250, 1500]);
+      base = choice(rnd, [40, 60, 80, 120, 140, 160, 240, 320, 480, 640, 900]);
+    } else if (level === 4) {
+      pctTenths = choice(rnd, [30, 70, 130, 170, 230, 350, 450, 650, 850, 1150]);
+      base = choice(rnd, [70, 130, 220, 260, 340, 460, 520, 780, 940]);
+    } else {
+      pctTenths = choice(rnd, [125, 175, 375, 625, 875, 1125, 1375, 1625]);
+      base = choice(rnd, [64, 96, 128, 176, 224, 288, 352, 464, 736]);
+    }
+    return {
+      prompt: `${renderScaled(BigInt(pctTenths), 1)}% of ${base}`,
+      answer: F(BigInt(pctTenths * base), 1000n),
+      category: "percent", places: 2, level,
+    };
+  },
+
+  fraction(rnd, level) {
+    // Every denominator here is a product of 2s and 5s, so each fraction
+    // terminates and the 4-place answer is exact.
+    const SETS = [
+      [[1,2],[1,4],[3,4],[1,5],[2,5],[3,5],[4,5],[1,10],[3,10],[7,10]],
+      [[1,8],[3,8],[5,8],[7,8],[1,4],[3,4],[1,5],[2,5],[3,5],[4,5]],
+      [[1,8],[3,8],[5,8],[7,8],[1,4],[3,4],[1,5],[2,5],[3,5],[4,5],
+       [1,16],[3,16],[1,20],[7,20],[1,40],[3,40]],
+      [[1,16],[3,16],[5,16],[7,16],[9,16],[11,16],[1,32],[3,32],[1,40],[7,40],[9,40],[1,25],[7,25]],
+      [[1,32],[5,32],[7,32],[11,32],[13,32],[1,64],[3,64],[5,64],[7,64],[9,64],[1,80],[7,80]],
+    ];
+    const [num, den] = choice(rnd, SETS[level - 1]);
+    return {
+      prompt: `${num}/${den} as a decimal`,
+      answer: F(BigInt(num), BigInt(den)),
+      category: "fraction", places: 4, level,
+    };
+  },
+};
+
+/* Render an integer scaled by 10^places as a decimal string, trailing
+   zeros stripped. Used for prompts, so the text a person reads is the
+   exact value being graded and never a float round-trip. */
+function renderScaled(scaled, places) {
+  const negative = scaled < 0n;
+  const digits = (negative ? -scaled : scaled).toString().padStart(places + 1, "0");
+  const whole = digits.slice(0, digits.length - places);
+  const frac = digits.slice(digits.length - places).replace(/0+$/, "");
+  return (negative ? "-" : "") + whole + (frac ? "." + frac : "");
+}
+
+function makeQuestion(rnd, category, level) {
+  if (!Object.prototype.hasOwnProperty.call(BUILDERS, category)) {
+    throw new RangeError("unknown category: " + category);
+  }
+  return BUILDERS[category](rnd, clamp(Math.round(level), MIN_LEVEL, MAX_LEVEL));
+}
+
+/* ============================================================
+   Answer parsing and grading — unchanged from index.html.
+   ============================================================ */
+
+function parseAnswer(text) {
+  const s = String(text).trim().replace(/,/g, "");
+  if (!s) return null;
+  let m;
+  if ((m = /^([+-]?\d+)$/.exec(s))) return F(BigInt(m[1]));
+  if ((m = /^([+-]?)(\d*)\.(\d+)$/.exec(s))) {
+    const sign = m[1] === "-" ? -1n : 1n;
+    const whole = m[2] === "" ? 0n : BigInt(m[2]);
+    const frac = BigInt(m[3]);
+    const scale = 10n ** BigInt(m[3].length);
+    return F(sign * (whole * scale + frac), scale);
+  }
+  if ((m = /^([+-]?\d+)\/(\d+)$/.exec(s))) {
+    const den = BigInt(m[2]);
+    if (den === 0n) return null;
+    return F(BigInt(m[1]), den);
+  }
+  return null;
+}
+
+function isCorrect(q, given) {
+  if (q.places === null) return given.eq(q.answer);
+  if (given.eq(q.answer)) return true;
+  const scale = F(10n ** BigInt(q.places));
+  return roundHalfEven(q.answer.mul(scale)) === roundHalfEven(given.mul(scale));
+}
+
+function renderAnswer(q) {
+  if (q.places === null) return (q.answer.n).toString();
+  const scale = F(10n ** BigInt(q.places));
+  return renderScaled(roundHalfEven(q.answer.mul(scale)), q.places);
+}
+
+/* ============================================================
+   The adaptive controller.
+
+   This part has to be fast, so it is arithmetic rather than
+   inference. Each category holds a rating in [1, 5]. After every
+   graded answer the rating moves toward or away from the current
+   level based on one number: how the answer time compared to a
+   target for that category at that level.
+
+     right and instant       → +K/2
+     right at exactly target → no movement (the level fits)
+     right but slow          → drifts down
+     wrong                   → −K/2
+
+   A correct answer never costs as much as a wrong one, however
+   slow: the floor on `outcome` guarantees it. That matters,
+   because the alternative teaches you to guess when time is tight.
+   ============================================================ */
+
+const BASE_SECONDS = {
+  add_sub: 4.0, multiply: 5.5, divide: 6.0,
+  decimal: 5.0, percent: 4.5, fraction: 3.5,
+};
+
+const K = 0.5;              // how far one answer can move a rating
+const CORRECT_FLOOR = 0.15; // right-but-slow must still beat wrong
+const FOCUS_BOOST = 1.5;    // how hard weak topics get over-sampled
+
+function targetSeconds(category, level) {
+  // A level-5 question gets roughly twice the time of a level-1 one.
+  return BASE_SECONDS[category] * (0.55 + 0.15 * clamp(level, MIN_LEVEL, MAX_LEVEL));
+}
+
+function makeController(categories) {
+  const pool = categories && categories.length ? categories.slice() : CATEGORIES.slice();
+  const rating = {}, seen = {}, correct = {};
+  for (const c of pool) { rating[c] = 3; seen[c] = 0; correct[c] = 0; }
+  return { pool, rating, seen, correct };
+}
+
+function levelFor(ctl, category) {
+  return clamp(Math.round(ctl.rating[category]), MIN_LEVEL, MAX_LEVEL);
+}
+
+
+
+function recordOutcome(ctl, category, level, wasCorrect, seconds) {
+  ctl.seen[category] += 1;
+  if (wasCorrect) ctl.correct[category] += 1;
+
+  const target = targetSeconds(category, level);
+  let outcome;
+  if (!wasCorrect) {
+    outcome = 0;
+  } else {
+    const margin = (target - seconds) / target;   // +1 instant, 0 on target, −1 at 2x
+    outcome = Math.max(CORRECT_FLOOR, 0.5 + 0.5 * clamp(margin, -1, 1));
+  }
+  ctl.rating[category] = clamp(ctl.rating[category] + K * (outcome - 0.5), MIN_LEVEL, MAX_LEVEL);
+  return outcome;
+}
+
+/* Weakness pulls sampling toward the topics costing you the most, but
+   never to the exclusion of the rest: a drill that only ever asks your
+   worst topic stops being a drill. */
+function weightFor(ctl, category) {
+  const base = ctl.pool.length === CATEGORIES.length ? DEFAULT_WEIGHTS[category] : 1;
+  const weakness = clamp((3.2 - ctl.rating[category]) / 2.2, 0, 1);
+  return base * (1 + FOCUS_BOOST * weakness);
+}
+
+function pickCategory(ctl, rnd) {
+  const weights = ctl.pool.map((c) => weightFor(ctl, c));
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return ctl.pool[0];
+  let x = rnd() * total;
+  for (let i = 0; i < ctl.pool.length; i++) {
+    x -= weights[i];
+    if (x < 0) return ctl.pool[i];
+  }
+  return ctl.pool[ctl.pool.length - 1];
+}
+
+function nextQuestion(ctl, rnd) {
+  const category = pickCategory(ctl, rnd);
+  return makeQuestion(rnd, category, levelFor(ctl, category));
+}
+
+
+
+/* ============================================================
+   Mistake diagnosis.
+
+   This is the part that used to be a language model, and it is
+   better as rules — not because rules are simpler, but because a
+   rule can be CHECKED and a model's guess cannot.
+
+   Every entry below reconstructs the wrong answer its slip would
+   produce, then fires only if that number equals, exactly, the
+   number that was typed. Asking a model "what went wrong here"
+   invites a plausible mechanism that does not actually generate
+   those digits. A mechanism that does not generate those digits
+   can never match here, so it can never be reported.
+
+   When nothing matches, that is what it says. An honest "no
+   pattern found" beats an invented one, and the unmatched rate is
+   a number you can watch and drive down by adding rules.
+   ============================================================ */
+
+const MINUS = "−", TIMES = "×", DIV = "÷";
+
+const isInt = (f) => f.d === 1n;
+const neg = (f) => f.mul(F(-1n));
+const pow10 = (k) => (k >= 0 ? F(10n ** BigInt(k)) : F(1n, 10n ** BigInt(-k)));
+
+/* Recover the operands from the prompt. The prompt is the only record of
+   what was asked, so diagnosis reads it back rather than keeping a
+   parallel copy that could drift out of step with what was displayed. */
+function parsePrompt(prompt) {
+  const two = (sym, op) => {
+    const m = new RegExp("^(\\S+)\\s*" + sym + "\\s*(\\S+)$").exec(prompt);
+    if (!m) return null;
+    const a = parseAnswer(m[1]), b = parseAnswer(m[2]);
+    return a && b ? { op, a, b } : null;
+  };
+  let m, r;
+  if ((r = two("\\+", "+"))) return r;
+  if ((r = two(MINUS, "-"))) return r;
+  if ((r = two(TIMES, "*"))) return r;
+  if ((r = two(DIV, "/"))) return r;
+  if ((m = /^([\d.]+)% of (\d+)$/.exec(prompt))) {
+    const pct = parseAnswer(m[1]), base = parseAnswer(m[2]);
+    return pct && base ? { op: "%", pct, base } : null;
+  }
+  if ((m = /^(\d+)\/(\d+) as a decimal$/.exec(prompt))) {
+    return { op: "frac", num: BigInt(m[1]), den: BigInt(m[2]) };
+  }
+  return null;
+}
+
+/* Apply fn column by column, right to left, with nothing carried or
+   borrowed between columns. That is what most arithmetic slips look like:
+   each column is computed correctly and the information that should
+   travel between them is dropped. */
+function columnwise(a, b, fn) {
+  const A = a.toString().split("").reverse();
+  const B = b.toString().split("").reverse();
+  let out = "";
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = i < A.length ? +A[i] : 0;
+    const y = i < B.length ? +B[i] : 0;
+    out = String(fn(x, y)) + out;
+  }
+  return BigInt(out.replace(/^0+(?=\d)/, ""));
+}
+
+const ordinal = (place) =>
+  place === 0 ? "units" : place === 1 ? "tens" : place === 2 ? "hundreds" :
+  place === 3 ? "thousands" : "10^" + place;
+
+/* Each rule returns { slip, kind } or null. The order is deliberate:
+   category-specific mechanisms first, because they name the actual
+   arithmetic error, and the generic shape-matchers last, because "one
+   digit is wrong" is true of many things and explains none of them. */
+const DIAGNOSES = [
+  function signFlip(c) {
+    if (c.e.n === 0n || !c.g.eq(neg(c.e))) return null;
+    if (c.p && c.p.op === "-") {
+      return { slip: "Subtracted the wrong way round: you computed the second number minus the first.", kind: "sign" };
+    }
+    return { slip: "Right digits, wrong sign.", kind: "sign" };
+  },
+
+  function droppedBorrow(c) {
+    if (c.cat !== "add_sub" || !c.p || c.p.op !== "-") return null;
+    if (!isInt(c.p.a) || !isInt(c.p.b) || c.p.a.n < c.p.b.n) return null;
+    const naive = columnwise(c.p.a.n, c.p.b.n, (x, y) => Math.abs(x - y));
+    return c.g.eq(F(naive))
+      ? { slip: "Borrow dropped: each column was subtracted smaller-from-larger instead of borrowing.", kind: "borrow" }
+      : null;
+  },
+
+  function droppedCarry(c) {
+    if (c.cat !== "add_sub" || !c.p || c.p.op !== "+") return null;
+    if (!isInt(c.p.a) || !isInt(c.p.b)) return null;
+    const naive = columnwise(c.p.a.n, c.p.b.n, (x, y) => (x + y) % 10);
+    return c.g.eq(F(naive))
+      ? { slip: "Carries dropped: each column was added on its own and the tens never moved left.", kind: "carry" }
+      : null;
+  },
+
+  function unshiftedPartial(c) {
+    if (c.cat !== "multiply" || !c.p || c.p.op !== "*") return null;
+    if (!isInt(c.p.a) || !isInt(c.p.b) || c.p.b.n < 10n) return null;
+    const a = c.p.a.n, b = c.p.b.n;
+    return c.g.eq(F(a * (b / 10n) + a * (b % 10n)))
+      ? { slip: "Second partial product not shifted: the tens row was added as if it were units.", kind: "shift" }
+      : null;
+  },
+
+  function droppedPartial(c) {
+    if (c.cat !== "multiply" || !c.p || c.p.op !== "*") return null;
+    if (!isInt(c.p.a) || !isInt(c.p.b) || c.p.b.n < 10n) return null;
+    const a = c.p.a.n, b = c.p.b.n;
+    if (c.g.eq(F(a * (b % 10n)))) return { slip: "Only the units row was multiplied; the tens row was left out.", kind: "partial" };
+    if (c.g.eq(F(a * (b / 10n) * 10n))) return { slip: "Only the tens row was multiplied; the units row was left out.", kind: "partial" };
+    return null;
+  },
+
+  function offByOneFactor(c) {
+    if (c.cat !== "multiply" || !c.p || c.p.op !== "*") return null;
+    if (!isInt(c.p.a) || !isInt(c.p.b)) return null;
+    const a = c.p.a.n, b = c.p.b.n;
+    for (const d of [-1n, 1n]) {
+      if (c.g.eq(F(a * (b + d)))) {
+        return { slip: "Multiplied by " + (b + d) + " instead of " + b + ": one group too " + (d > 0n ? "many" : "few") + ".", kind: "count" };
+      }
+      if (c.g.eq(F((a + d) * b))) {
+        return { slip: "Multiplied " + (a + d) + " instead of " + a + ".", kind: "count" };
+      }
+    }
+    return null;
+  },
+
+  function invertedDivision(c) {
+    if (c.cat !== "divide" || !c.p || c.p.op !== "/" || c.p.a.n === 0n) return null;
+    const flipped = new Frac(c.p.b.n * c.p.a.d, c.p.b.d * c.p.a.n);
+    return c.g.eq(flipped)
+      ? { slip: "Divided the wrong way round: the divisor was divided by the dividend.", kind: "invert" }
+      : null;
+  },
+
+  function tookTheRemainder(c) {
+    if (c.cat !== "percent" || !c.p || c.p.op !== "%") return null;
+    return c.g.eq(c.p.base.sub(c.e))
+      ? { slip: "That is what is left after taking the percentage, not the percentage itself.", kind: "complement" }
+      : null;
+  },
+
+  function invertedFraction(c) {
+    if (c.cat !== "fraction" || !c.p || c.p.op !== "frac" || c.p.num === 0n) return null;
+    return c.g.eq(F(c.p.den, c.p.num))
+      ? { slip: "Numerator and denominator swapped.", kind: "invert" }
+      : null;
+  },
+
+  function decimalPlace(c) {
+    if (c.e.n === 0n) return null;
+    for (const k of [-3, -2, -1, 1, 2, 3]) {
+      if (!c.g.eq(c.e.mul(pow10(k)))) continue;
+      const n = Math.abs(k);
+      const extra = c.cat === "percent" && k === 2
+        ? " Looks like the percentage was used as a whole number rather than as hundredths."
+        : "";
+      return {
+        slip: "Every digit is correct: the decimal point is " + n + " place" + (n === 1 ? "" : "s") +
+              " too far " + (k > 0 ? "right" : "left") + "." + extra,
+        kind: "place",
+      };
+    }
+    return null;
+  },
+
+  function transposed(c) {
+    const a = c.eStr.replace("-", ""), b = c.gStr.replace("-", "");
+    if (a === b || a.length !== b.length) return null;
+    if (a.split("").sort().join("") !== b.split("").sort().join("")) return null;
+    return { slip: "The right digits in the wrong order.", kind: "transpose" };
+  },
+
+  function oneDigitOff(c) {
+    const a = c.eStr, b = c.gStr;
+    if (a.length !== b.length) return null;
+    const at = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) at.push(i);
+    if (at.length !== 1) return null;
+    const i = at[0];
+    if (!/\d/.test(a[i]) || !/\d/.test(b[i])) return null;
+    const place = a.indexOf(".") === -1 ? a.length - 1 - i : null;
+    return {
+      slip: place === null
+        ? "A single digit is wrong; everything else is right."
+        : "A single digit is wrong, in the " + ordinal(place) + " column.",
+      kind: "digit",
+    };
+  },
+
+  function outByALittle(c) {
+    const d = c.g.sub(c.e);
+    if (d.n === 0n || !isInt(d)) return null;
+    const size = d.n < 0n ? -d.n : d.n;
+    if (size > 9n) return null;
+    return { slip: "Out by " + size + (d.n < 0n ? ", low." : ", high."), kind: "small" };
+  },
+];
+
+/* The one entry point. Everything above is a candidate; this returns the
+   first candidate that actually reproduces what was typed. */
+function diagnose(attempt) {
+  if (!attempt.given) return { slip: "Skipped — no answer entered.", kind: "skip" };
+  const g = parseAnswer(attempt.given);
+  if (!g) return { slip: "Not a number the drill could read.", kind: "unparsed" };
+  const e = parseAnswer(attempt.expected);
+  if (!e) return null;
+
+  const ctx = {
+    p: parsePrompt(attempt.prompt),
+    cat: attempt.category,
+    e, g, eStr: attempt.expected, gStr: attempt.given,
+  };
+  for (const rule of DIAGNOSES) {
+    let hit = null;
+    // A rule that throws must never take the results screen down with it.
+    try { hit = rule(ctx); } catch (err) { hit = null; }
+    if (hit) return hit;
+  }
+  return { slip: "No pattern found — most likely a rushed guess.", kind: "none" };
+}
+
+const KIND_ADVICE = {
+  borrow: "borrows dropped in subtraction, so work right to left and mark the borrow before moving on",
+  carry: "carries dropped in addition, because the tens have to travel left",
+  shift: "the second partial product not shifted a column in multiplication",
+  partial: "one partial product left out of a multiplication",
+  place: "the decimal point in the wrong place, with every digit correct",
+  sign: "the right digits with the wrong sign",
+  invert: "the two operands the wrong way round",
+  transpose: "the right digits written in the wrong order",
+  digit: "a single digit slipping in an otherwise correct answer",
+  count: "multiplying by one more or one fewer than asked",
+  complement: "giving what is left rather than what was asked for",
+  small: "small slips of a few units",
+};
+
+/* ============================================================
+   The debrief, written from the numbers rather than about them.
+
+   The same job the model had, done as sentence templates over
+   figures the page already computes. It says less than the model
+   did, and everything it says is true of this exact session.
+   ============================================================ */
+
+function buildDebrief(record) {
+  const rows = byCategory(record);
+  if (!rows.length) return "Nothing was attempted, so there is nothing to read.";
+
+  const attempts = record.attempts;
+  const correct = attempts.filter((a) => a.correct).length;
+  const out = [];
+
+  out.push(
+    "You answered " + attempts.length + " of " + record.questionCount + " and got " +
+    correct + " right, " + Math.round((correct / attempts.length) * 100) + " percent, at " +
+    ratePerMinute(record).toFixed(1) + " correct per minute."
+  );
+
+  const slowest = rows[0];
+  if (rows.length > 1) {
+    const fastest = rows[rows.length - 1];
+    out.push(
+      CATEGORY_LABEL[slowest.category] + " cost the most clock at a median of " +
+      slowest.medianTotal.toFixed(1) + " seconds, against " + fastest.medianTotal.toFixed(1) +
+      " for " + CATEGORY_LABEL[fastest.category] + "."
+    );
+  }
+
+  const weakest = [...rows].sort((a, b) => a.accuracy - b.accuracy)[0];
+  if (weakest && weakest.accuracy < 0.8) {
+    out.push(
+      "Accuracy fell furthest on " + CATEGORY_LABEL[weakest.category] + ", " +
+      Math.round(weakest.accuracy * 100) + " percent over " + weakest.n +
+      (weakest.n === 1 ? " question." : " questions.")
+    );
+  }
+
+  // The repeated named slip is the one thing here you can act on directly.
+  const kinds = {};
+  for (const a of attempts) {
+    if (a.correct) continue;
+    const d = diagnose(a);
+    if (!d || d.kind === "none" || d.kind === "skip" || d.kind === "unparsed") continue;
+    kinds[d.kind] = (kinds[d.kind] || 0) + 1;
+  }
+  const ranked = Object.entries(kinds).sort((x, y) => y[1] - x[1]);
+  if (ranked.length && ranked[0][1] > 1) {
+    out.push(ranked[0][1] + " of your misses were the same mistake: " +
+             (KIND_ADVICE[ranked[0][0]] || ranked[0][0]) + ".");
+  }
+
+  const eased = record.startLevels && record.endLevels
+    ? CATEGORIES.filter((c) => record.startLevels[c] !== undefined &&
+        record.endLevels[c] - record.startLevels[c] <= -0.5)
+    : [];
+  if (eased.length) {
+    out.push("The drill eased off on " + eased.map((c) => CATEGORY_LABEL[c]).join(" and ") +
+             ", which is where the ground is soft.");
+  }
+
+  out.push(
+    "Tomorrow: drill " + CATEGORY_LABEL[slowest.category] + " on its own until the median drops under " +
+    Math.max(2, Math.floor(slowest.medianTotal * 0.7)) + " seconds, then come back to the full mix."
+  );
+
+  return out.join(" ");
+}
+
+/* ============================================================
+   Session state
+   ============================================================ */
+
+const STORAGE_KEY = "mentalmath.sessions";
+
+const state = {
+  attempts: [],
+  current: null,
+  ctl: null,
+  rnd: null,
+  limitSeconds: 480,
+  count: 80,
+  seed: 0,
+  categories: null,
+  startedAt: null,
+  startMs: 0,
+  shownMs: 0,
+  firstKeyMs: null,
+  tickHandle: null,
+  running: false,
+  lastRecord: null,
+  startLevels: null,
+};
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  start: $("start"), drill: $("drill"), results: $("results"),
+  counter: $("counter"), clock: $("clock"), fill: $("progressFill"),
+  question: $("question"), answer: $("answer"),
+  levelStrip: $("levelStrip"),
+  headline: $("headline"), catRows: $("catRows"),
+  missedBlock: $("missedBlock"), missedList: $("missedList"), missedHeading: $("missedHeading"),
+  debriefBlock: $("debriefBlock"), debrief: $("debrief"),
+  seedNote: $("seedNote"), catList: $("catList"),
+};
+
+function show(section) {
+  for (const s of [el.start, el.drill, el.results]) s.hidden = (s !== section);
+  document.body.classList.toggle("drilling", section === el.drill);
+}
+
+
+
+function refreshReadyFigure() {
+  const n = clamp(parseInt($("optCount").value, 10) || 80, 1, 500);
+  const t = clamp(parseInt($("optSeconds").value, 10) || 480, 10, 7200);
+  const mins = Math.floor(t / 60), secs = t % 60;
+  const plural = (v, w) => `${v} ${w}${v === 1 ? "" : "s"}`;
+  const duration = secs === 0
+    ? plural(mins, "minute")
+    : mins === 0 ? plural(secs, "second")
+    : `${plural(mins, "minute")} ${plural(secs, "second")}`;
+  $("readyCount").textContent = n;
+  $("readyClock").textContent = duration;
+  $("lengthState").textContent = `${plural(n, "question")} in ${duration}`;
+}
+
+function selectedCategories() {
+  const picked = [...el.catList.querySelectorAll("input:checked")].map((i) => i.value);
+  return picked.length ? picked : null;
+}
+
+function refreshTopicState() {
+  const picked = selectedCategories();
+  $("topicState").textContent = picked
+    ? picked.map((c) => CATEGORY_LABEL[c]).join(", ")
+    : "all topics";
+}
+
+function beginSession(startLevels) {
+  const count = clamp(parseInt($("optCount").value, 10) || 80, 1, 500);
+  const seconds = clamp(parseInt($("optSeconds").value, 10) || 480, 10, 7200);
+  const seed = Math.floor(Math.random() * 0xFFFFFFFF) >>> 0;
+  startWith({ count, seconds, seed, categories: selectedCategories(), startLevels });
+}
+
+function startWith({ count, seconds, seed, categories, startLevels }) {
+  state.count = count;
+  state.limitSeconds = seconds;
+  state.seed = seed;
+  state.categories = categories;
+  state.rnd = mulberry32(seed);
+  state.ctl = makeController(categories);
+  // "Again, from these levels" resumes where the last run left you, which is
+  // the only way two sessions a week apart compare honestly.
+  if (startLevels) {
+    for (const c of state.ctl.pool) {
+      if (typeof startLevels[c] === "number") {
+        state.ctl.rating[c] = clamp(startLevels[c], MIN_LEVEL, MAX_LEVEL);
+      }
+    }
+  }
+  state.startLevels = Object.fromEntries(state.ctl.pool.map((c) => [c, state.ctl.rating[c]]));
+  state.attempts = [];
+  state.startedAt = new Date().toISOString();
+  state.running = true;
+
+  el.clock.classList.toggle("hidden-clock", $("optHideClock").checked);
+
+  show(el.drill);
+  state.startMs = performance.now();
+  renderQuestion();
+  focusAnswer();
+
+  clearInterval(state.tickHandle);
+  state.tickHandle = setInterval(tick, 200);
+  tick();
+}
+
+function elapsed() { return (performance.now() - state.startMs) / 1000; }
+
+function tick() {
+  if (!state.running) return;
+  const remaining = state.limitSeconds - elapsed();
+  if (remaining <= 0) { finish(false); return; }
+  const m = Math.floor(remaining / 60);
+  const s = Math.floor(remaining % 60);
+  el.clock.textContent = `${m}:${String(s).padStart(2, "0")}`;
+  el.clock.classList.toggle("low", remaining <= 30);
+  el.fill.style.width = `${(elapsed() / state.limitSeconds) * 100}%`;
+}
+
+function renderLevelStrip() {
+  const q = state.current;
+  if (!q) { el.levelStrip.textContent = ""; return; }
+  const pips = [];
+  for (let i = 1; i <= MAX_LEVEL; i++) {
+    pips.push(`<span class="pip${i <= q.level ? " lit" : ""}"></span>`);
+  }
+  el.levelStrip.innerHTML =
+    `<span class="cat">${CATEGORY_LABEL[q.category]}</span>` +
+    `<span class="pips">${pips.join("")}</span>` +
+    `<span>level ${q.level}</span>`;
+}
+
+
+
+function renderQuestion() {
+  state.current = nextQuestion(state.ctl, state.rnd);
+  el.question.textContent = state.current.prompt;
+  el.counter.textContent = `${state.attempts.length + 1} / ${state.count}`;
+  el.answer.value = "";
+  state.shownMs = performance.now();
+  state.firstKeyMs = null;
+  renderLevelStrip();
+}
+
+function submit() {
+  if (!state.running) return;
+  const q = state.current;
+  const raw = el.answer.value;
+  const now = performance.now();
+
+  const value = parseAnswer(raw);
+  const wasCorrect = value !== null && isCorrect(q, value);
+  const seconds = +((now - state.shownMs) / 1000).toFixed(3);
+
+  state.attempts.push({
+    prompt: q.prompt,
+    category: q.category,
+    level: q.level,
+    expected: renderAnswer(q),
+    given: raw.trim(),
+    correct: wasCorrect,
+    seconds,
+    thinkSeconds: state.firstKeyMs === null ? null : +((state.firstKeyMs - state.shownMs) / 1000).toFixed(3),
+  });
+
+  // Local, instant, always. This is what actually drives difficulty.
+  recordOutcome(state.ctl, q.category, q.level, wasCorrect, seconds);
+
+  if (elapsed() >= state.limitSeconds) { finish(false); return; }
+  if (state.attempts.length >= state.count) { finish(true); return; }
+
+  renderQuestion();
+}
+
+function finish(completed) {
+  state.running = false;
+  clearInterval(state.tickHandle);
+  const record = {
+    startedAt: state.startedAt,
+    limitSeconds: state.limitSeconds,
+    questionCount: state.count,
+    seed: state.seed,
+    categories: state.categories,
+    attempts: state.attempts,
+    elapsedSeconds: +Math.min(elapsed(), state.limitSeconds).toFixed(2),
+    completed,
+    startLevels: state.startLevels,
+    endLevels: Object.fromEntries(state.ctl.pool.map((c) => [c, +state.ctl.rating[c].toFixed(2)])),
+  };
+  state.lastRecord = record;
+  saveSession(record);
+  renderResults(record);
+  show(el.results);
+  renderDebrief(record);
+}
+
+function saveSession(record) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    all.push(record);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all.slice(-200)));
+  } catch (e) {
+    /* Private browsing or a full quota. Losing the record must never
+       lose the results screen, so this is deliberately swallowed. */
+  }
+}
+
+/* ============================================================
+   Scoring — a port of mentalmath/stats.py
+   ============================================================ */
+
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function ratePerMinute(r) {
+  if (r.elapsedSeconds <= 0) return 0;
+  const correct = r.attempts.filter((a) => a.correct).length;
+  return correct / (r.elapsedSeconds / 60);
+}
+
+function projectedScore(r) { return ratePerMinute(r) * (r.limitSeconds / 60); }
+
+function byCategory(r) {
+  const out = [];
+  for (const c of CATEGORIES) {
+    const rows = r.attempts.filter((a) => a.category === c);
+    if (!rows.length) continue;
+    out.push({
+      category: c,
+      n: rows.length,
+      accuracy: rows.filter((a) => a.correct).length / rows.length,
+      medianTotal: median(rows.map((a) => a.seconds)),
+      medianThink: median(rows.filter((a) => a.thinkSeconds !== null).map((a) => a.thinkSeconds)),
+    });
+  }
+  out.sort((a, b) => b.medianTotal - a.medianTotal);
+  return out;
+}
+
+function renderResults(r) {
+  const correct = r.attempts.filter((a) => a.correct).length;
+  const accuracy = r.attempts.length ? correct / r.attempts.length : 0;
+
+  el.headline.innerHTML = "";
+  const stats = [
+    ["projected score at full time", `${Math.round(projectedScore(r))}`, "stat lead"],
+    [`attempted of ${r.questionCount}`, `${r.attempts.length}`, "stat"],
+    ["correct", `${correct}`, "stat"],
+    ["accuracy", `${Math.round(accuracy * 100)}%`, "stat"],
+    [`elapsed of ${r.limitSeconds}s`, `${Math.round(r.elapsedSeconds)}s`, "stat"],
+    ["correct per minute", `${ratePerMinute(r).toFixed(1)}`, "stat"],
+  ];
+  for (const [k, v, cls] of stats) {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.innerHTML = `<span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v)}</span>`;
+    el.headline.appendChild(d);
+  }
+
+  el.catRows.innerHTML = "";
+  const rows = byCategory(r);
+  const worst = rows.length ? Math.max(...rows.map((x) => x.medianTotal)) : 0;
+  rows.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    if (i === 0 && rows.length > 1) tr.className = "slowest";
+    const pct = worst > 0 ? (row.medianTotal / worst) * 100 : 0;
+    const endLevel = r.endLevels && r.endLevels[row.category];
+    tr.innerHTML =
+      `<td>${CATEGORY_LABEL[row.category]}</td>` +
+      `<td>${row.n}</td>` +
+      `<td>${endLevel === undefined ? "—" : endLevel.toFixed(1)}</td>` +
+      `<td>${Math.round(row.accuracy * 100)}%</td>` +
+      `<td>${row.medianThink === null ? "—" : row.medianThink.toFixed(1) + "s"}</td>` +
+      `<td>${row.medianTotal.toFixed(1)}s</td>` +
+      `<td class="meter"><span class="catbar"><i style="width:${pct.toFixed(1)}%"></i></span></td>`;
+    el.catRows.appendChild(tr);
+  });
+
+  renderMissed(r);
+
+  const moved = r.startLevels && r.endLevels
+    ? CATEGORIES.filter((c) => r.startLevels[c] !== undefined &&
+        Math.abs(r.endLevels[c] - r.startLevels[c]) >= 0.5).length
+    : 0;
+  el.seedNote.textContent =
+    (r.completed ? "You finished the set. " : "The clock ran out. ") +
+    (moved ? `${moved} topic${moved === 1 ? "" : "s"} moved a level. ` : "") +
+    "Saved to this browser.";
+}
+
+/* Every miss carries its diagnosis immediately: the rules are local and
+   synchronous, so there is no second render and no waiting state. */
+function renderMissed(r) {
+  const wrong = r.attempts.filter((a) => !a.correct);
+  el.missedBlock.hidden = wrong.length === 0;
+  el.missedHeading.textContent = "Missed, and why";
+  el.missedList.innerHTML = "";
+
+  for (const a of wrong.slice(0, 25)) {
+    const li = document.createElement("li");
+    const given = a.given
+      ? `<span class="given">${escapeHtml(a.given)}</span>`
+      : `<span class="skipped">skipped</span>`;
+    const d = diagnose(a);
+    li.innerHTML =
+      `<span class="headline-row"><span>${escapeHtml(a.prompt)} = ${escapeHtml(a.expected)}</span>${given}</span>` +
+      (d ? `<span class="slip">${escapeHtml(d.slip)}</span>` : "");
+    el.missedList.appendChild(li);
+  }
+  if (wrong.length > 25) {
+    const li = document.createElement("li");
+    li.className = "skipped";
+    li.textContent = `... and ${wrong.length - 25} more`;
+    el.missedList.appendChild(li);
+  }
+}
+
+function renderDebrief(record) {
+  if (!record.attempts.length) { el.debriefBlock.hidden = true; return; }
+  el.debriefBlock.hidden = false;
+  el.debrief.className = "debrief";
+  el.debrief.textContent = buildDebrief(record);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+
+for (const c of CATEGORIES) {
+  const label = document.createElement("label");
+  label.innerHTML = `<input type="checkbox" value="${c}"><span>${CATEGORY_LABEL[c]}</span>`;
+  el.catList.appendChild(label);
+}
+el.catList.addEventListener("change", refreshTopicState);
+
+$("optCount").addEventListener("input", refreshReadyFigure);
+$("optSeconds").addEventListener("input", refreshReadyFigure);
+refreshReadyFigure();
+refreshTopicState();
+
+function focusAnswer() {
+  // A physical keyboard should land in the field; a touch keyboard covering
+  // half the screen should not open on its own.
+  if (window.matchMedia("(pointer: coarse)").matches) return;
+  el.answer.focus();
+}
+
+$("btnStart").addEventListener("click", () => beginSession(null));
+$("btnQuit").addEventListener("click", () => finish(false));
+$("btnHome").addEventListener("click", () => { show(el.start); refreshReadyFigure(); });
+$("btnAgain").addEventListener("click", () => {
+  beginSession(state.lastRecord ? state.lastRecord.endLevels : null);
+});
+$("btnSubmit").addEventListener("click", () => { submit(); focusAnswer(); });
+
+el.answer.addEventListener("keydown", (e) => {
+  if (state.firstKeyMs === null && e.key.length === 1) state.firstKeyMs = performance.now();
+  if (e.key === "Enter") { e.preventDefault(); submit(); }
+});
+
+/* The page owns its keypad, because a phone's decimal keyboard hides the
+   minus sign and the slash on most layouts. */
+for (const btn of document.querySelectorAll(".key")) {
+  btn.addEventListener("click", () => {
+    if (!state.running) return;
+    if (state.firstKeyMs === null) state.firstKeyMs = performance.now();
+    const k = btn.dataset.key;
+    if (k === "back") el.answer.value = el.answer.value.slice(0, -1);
+    else el.answer.value += k;
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.running) finish(false);
+  if (e.key === "Enter" && !el.start.hidden) beginSession(null);
+});
+
+$("themeToggle").addEventListener("click", () => {
+  const root = document.documentElement;
+  const current = root.getAttribute("data-theme");
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const effective = current || (systemDark ? "dark" : "light");
+  root.setAttribute("data-theme", effective === "dark" ? "light" : "dark");
+});
+
+/* ============================================================
+   Self-test.
+
+   Append ?selftest to the URL. Every assertion here is a claim the
+   page makes elsewhere — that grading is exact, that division stays
+   exact at every difficulty, that difficulty is actually monotonic,
+   and that the model cannot move a level by more than one step.
+   A claim you cannot run is not a claim.
+   ============================================================ */
+
+function mentalMathSelfTest() {
+  const results = [];
+  const ok = (name, cond) => results.push({ name, pass: !!cond });
+
+  // --- exact arithmetic ---
+  ok("0.1 + 0.2 equals 0.3 exactly", F(1n, 10n).add(F(2n, 10n)).eq(F(3n, 10n)));
+  ok("fractions reduce", F(4n, 8n).eq(F(1n, 2n)));
+  ok("negative denominators normalise", F(1n, -2n).eq(F(-1n, 2n)));
+  ok("subtraction is exact", F(3n, 10n).sub(F(1n, 10n)).eq(F(2n, 10n)));
+  ok("zero denominator throws", (() => { try { F(1n, 0n); return false; } catch (e) { return true; } })());
+
+  // --- round half to even, checked against Python's round() on a Fraction ---
+  const halfEven = [
+    [F(1n, 2n), 0n], [F(3n, 2n), 2n], [F(5n, 2n), 2n], [F(7n, 2n), 4n],
+    [F(-1n, 2n), 0n], [F(-3n, 2n), -2n], [F(-5n, 2n), -2n],
+    [F(1n, 4n), 0n], [F(3n, 4n), 1n], [F(-3n, 4n), -1n], [F(0n), 0n],
+  ];
+  halfEven.forEach(([f, want], i) => ok(`round-half-even case ${i + 1}`, roundHalfEven(f) === want));
+
+  // --- parsing ---
+  ok("parses integer", parseAnswer("36").eq(F(36n)));
+  ok("parses decimal", parseAnswer("0.375").eq(F(3n, 8n)));
+  ok("parses fraction", parseAnswer("3/8").eq(F(3n, 8n)));
+  ok("parses negative decimal", parseAnswer("-12.5").eq(F(-25n, 2n)));
+  ok("parses leading-dot decimal", parseAnswer(".5").eq(F(1n, 2n)));
+  ok("strips commas", parseAnswer("1,024").eq(F(1024n)));
+  ok("rejects empty", parseAnswer("   ") === null);
+  ok("rejects words", parseAnswer("twelve") === null);
+  ok("rejects divide by zero", parseAnswer("1/0") === null);
+
+  // --- grading ---
+  const twoPlace = { answer: F(1n, 3n), places: 2 };
+  ok("accepts the rounded answer", isCorrect(twoPlace, F(33n, 100n)));
+  ok("accepts the exact answer", isCorrect(twoPlace, F(1n, 3n)));
+  ok("rejects a wrong rounding", !isCorrect(twoPlace, F(34n, 100n)));
+  ok("integer grading is strict", !isCorrect({ answer: F(12n), places: null }, F(13n)));
+
+  // --- generation stays exact at every level ---
+  let divideExact = true, fractionTerminates = true, percentExact = true;
+  for (let level = MIN_LEVEL; level <= MAX_LEVEL; level++) {
+    const rnd = mulberry32(level * 7919);
+    for (let i = 0; i < 300; i++) {
+      const d = BUILDERS.divide(rnd, level);
+      if (d.answer.d !== 1n) divideExact = false;
+      // A terminating decimal has a denominator whose only prime factors are
+      // 2 and 5, which is exactly what an exact 4-place answer needs.
+      const fr = BUILDERS.fraction(rnd, level);
+      let den = fr.answer.d;
+      while (den % 2n === 0n) den /= 2n;
+      while (den % 5n === 0n) den /= 5n;
+      if (den !== 1n) fractionTerminates = false;
+      // Exact to two places means 100 x answer is a whole number.
+      const p = BUILDERS.percent(rnd, level);
+      if (p.answer.mul(F(100n)).d !== 1n) percentExact = false;
+    }
+  }
+  ok("division resolves exactly at every level", divideExact);
+  ok("fractions terminate at every level", fractionTerminates);
+  ok("percentages are exact to two places at every level", percentExact);
+
+  // --- difficulty actually increases ---
+  function meanAnswerSize(category, level, n) {
+    const rnd = mulberry32(4242);
+    let total = 0;
+    for (let i = 0; i < n; i++) total += Math.abs(BUILDERS[category](rnd, level).answer.toNumber());
+    return total / n;
+  }
+  for (const cat of ["add_sub", "multiply", "divide"]) {
+    let monotonic = true, prev = -Infinity;
+    for (let level = MIN_LEVEL; level <= MAX_LEVEL; level++) {
+      const size = meanAnswerSize(cat, level, 400);
+      if (size <= prev) monotonic = false;
+      prev = size;
+    }
+    ok(`${cat} grows with level`, monotonic);
+  }
+
+  // --- prompts render the exact value, not a float ---
+  ok("renderScaled strips trailing zeros", renderScaled(1250n, 2) === "12.5");
+  ok("renderScaled keeps a bare integer bare", renderScaled(1200n, 2) === "12");
+  ok("renderScaled handles negatives", renderScaled(-505n, 2) === "-5.05");
+  ok("renderScaled pads a small numerator", renderScaled(5n, 2) === "0.05");
+
+  // --- the controller ---
+  const fresh = makeController(null);
+  ok("controller starts mid-range", levelFor(fresh, "multiply") === 3);
+
+  const up = makeController(null);
+  for (let i = 0; i < 20; i++) recordOutcome(up, "multiply", 3, true, 0.4);
+  ok("fast and correct raises the rating", up.rating.multiply > 3);
+
+  const down = makeController(null);
+  for (let i = 0; i < 20; i++) recordOutcome(down, "multiply", 3, false, 4);
+  ok("wrong answers lower the rating", down.rating.multiply < 3);
+
+  const slowRight = makeController(null), fastWrong = makeController(null);
+  const t = targetSeconds("multiply", 3);
+  recordOutcome(slowRight, "multiply", 3, true, t * 3);
+  recordOutcome(fastWrong, "multiply", 3, false, t * 3);
+  ok("right but slow still beats wrong", slowRight.rating.multiply > fastWrong.rating.multiply);
+
+  const onTarget = makeController(null);
+  const before = onTarget.rating.divide;
+  recordOutcome(onTarget, "divide", 3, true, targetSeconds("divide", 3));
+  ok("an on-target answer holds the level", Math.abs(onTarget.rating.divide - before) < 1e-9);
+
+  const bounded = makeController(null);
+  for (let i = 0; i < 200; i++) recordOutcome(bounded, "divide", 5, true, 0.1);
+  ok("rating cannot exceed 5", bounded.rating.divide <= MAX_LEVEL);
+  for (let i = 0; i < 400; i++) recordOutcome(bounded, "divide", 1, false, 9);
+  ok("rating cannot fall below 1", bounded.rating.divide >= MIN_LEVEL);
+
+  // --- every diagnosis rule, with a worked case ---
+  // Each case is a real slip: the wrong answer below is what that mistake
+  // actually produces, which is the only reason the rule is allowed to fire.
+  const DIAG_CASES = [
+    ["532 \u2212 178", "add_sub", "354", "446", "borrow"],      // columns subtracted smaller-from-larger
+    ["538 + 761",       "add_sub", "1299", "299", "carry"],      // carries never moved left
+    ["37 \u00d7 24",   "multiply", "888", "222", "shift"],      // 37x2 + 37x4, tens row unshifted
+    ["37 \u00d7 24",   "multiply", "888", "148", "partial"],    // only 37x4
+    ["37 \u00d7 24",   "multiply", "888", "925", "count"],      // 37x25
+    ["468 \u00f7 9",   "divide",  "52", "1/52", "invert"],      // 9 divided by 468
+    ["3/8 as a decimal","fraction","0.375", "8/3", "invert"],    // numerator and denominator swapped
+    ["25% of 640",      "percent", "160", "480", "complement"],  // 640 - 160
+    ["25% of 640",      "percent", "160", "16000", "place"],     // 25 used instead of 0.25
+    ["178 \u2212 532", "add_sub", "-354", "354", "sign"],       // subtracted the wrong way round
+    ["532 \u2212 178", "add_sub", "354", "345", "transpose"],
+    ["532 \u2212 178", "add_sub", "354", "324", "digit"],
+    ["532 \u2212 178", "add_sub", "354", "360", "small"],
+    ["532 \u2212 178", "add_sub", "354", "1", "none"],
+    ["532 \u2212 178", "add_sub", "354", "", "skip"],
+  ];
+  for (const [prompt, category, expected, given, kind] of DIAG_CASES) {
+    const d = diagnose({ prompt, category, expected, given, correct: false });
+    ok(`diagnoses ${kind}: ${prompt} answered ${given || "(blank)"}`, d && d.kind === kind);
+  }
+
+  // The debrief is generated from the record, so it must survive a bare one.
+  const tinyRecord = {
+    questionCount: 1, limitSeconds: 60, elapsedSeconds: 10,
+    attempts: [{ prompt: "12 + 13", category: "add_sub", level: 1, expected: "25",
+                 given: "24", correct: false, seconds: 3, thinkSeconds: 1 }],
+    startLevels: { add_sub: 3 }, endLevels: { add_sub: 2.5 },
+  };
+  const text = buildDebrief(tinyRecord);
+  ok("debrief is generated from the record", typeof text === "string" && text.length > 40);
+  ok("debrief reports the real count", text.indexOf("1 of 1") !== -1);
+  ok("empty session does not crash the debrief",
+     typeof buildDebrief({ questionCount: 0, limitSeconds: 60, elapsedSeconds: 0, attempts: [] }) === "string");
+
+  // --- selection stays honest ---
+  const skew = makeController(null);
+  skew.rating.divide = 1;
+  skew.rating.fraction = 5;
+  const relative = weightFor(skew, "divide") / weightFor(skew, "fraction");
+  ok("weak topics are weighted up",
+     relative > DEFAULT_WEIGHTS.divide / DEFAULT_WEIGHTS.fraction);
+  const seenCats = new Set();
+  const selRnd = mulberry32(11);
+  for (let i = 0; i < 4000; i++) seenCats.add(pickCategory(skew, selRnd));
+  ok("no topic is starved entirely", CATEGORIES.every((c) => seenCats.has(c)));
+
+  const passed = results.filter((r) => r.pass).length;
+  return { passed, total: results.length, failures: results.filter((r) => !r.pass) };
+}
+window.mentalMathSelfTest = mentalMathSelfTest;
+
+if (location.search.includes("selftest")) {
+  const out = mentalMathSelfTest();
+  const box = document.createElement("div");
+  box.className = "panel";
+  box.style.marginTop = "2rem";
+  box.innerHTML =
+    `<strong>${out.passed} / ${out.total} assertions passed</strong>` +
+    (out.failures.length
+      ? `<ul>${out.failures.map((f) => `<li>${escapeHtml(f.name)}</li>`).join("")}</ul>`
+      : `<span class="note">Every claim this page makes about exactness, difficulty, and the bounds on the model is checked here.</span>`);
+  document.querySelector("main").prepend(box);
+  console.log(`mental-math self-test: ${out.passed}/${out.total}`, out.failures);
+}
+</script>
+</body>
+</html>

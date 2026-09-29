@@ -44,7 +44,67 @@ new random draw that might have been easier.
 little. Median seconds per category tells you where the clock is actually
 being lost, which is the only thing that changes what you practice tomorrow.
 
-## Two implementations
+## Adaptive drill
+
+`adaptive.html` is the adaptive version: the same drill, except the difficulty moves.
+Every topic carries a level from 1 to 5, and the level you are asked at follows
+how you are doing.
+
+**Difficulty is chosen locally.** Answers are graded as exact rationals, unchanged
+from the fixed version. Difficulty is set by a small deterministic controller: each
+topic holds a rating, and every answer moves it by how the time taken compared to a
+target for that topic at that level. Fast and right pushes up, wrong pushes down,
+right-but-slow drifts down gently. It is arithmetic rather than inference, because
+a timed drill cannot block on a network request between questions.
+
+**Mistakes are diagnosed by rules that have to reproduce your answer.** An earlier
+version of this page asked a language model what went wrong. It was replaced,
+because a rule can be checked and a guess cannot.
+
+Each rule reconstructs the wrong result its slip would cause, and fires only if
+that number equals, exactly, what you typed:
+
+| Slip | Produces |
+|------|----------|
+| Borrow dropped in subtraction | `532 − 178` answered `446` |
+| Carries never moved left | `538 + 761` answered `299` |
+| Second partial product unshifted | `37 × 24` answered `222` |
+| One partial product omitted | `37 × 24` answered `148` |
+| Divisor and dividend swapped | `468 ÷ 9` answered `1/52` |
+| Percentage used as a whole number | `25% of 640` answered `16000` |
+| The remainder, not the percentage | `25% of 640` answered `480` |
+
+Ask a model to explain `532 − 178 = 446` and it can offer a fluent mechanism that
+does not actually produce `446`. Here that is structurally impossible: a mechanism
+that does not generate those digits never matches, so it is never shown. When
+nothing matches, the page says "no pattern found" rather than inventing one, and
+the unmatched rate is a number you can watch and drive down by adding rules.
+
+The debrief is assembled the same way, from figures the page already computes:
+your pace, the topic that cost the most clock, the slip you repeated most, and one
+concrete thing to drill tomorrow.
+
+**Nothing is sent anywhere.** The page's Content-Security-Policy sets
+`default-src 'none'` with no `connect-src`, so it cannot make a network request at
+all — a property you can confirm in devtools rather than take on trust. No key, no
+account, no backend, no per-user cost. Serve it as a static file and any number of
+people can use it at once, because each browser runs the whole thing locally.
+
+```bash
+open adaptive.html            # or adaptive.html?selftest
+```
+
+**66 assertions**, covering the exact arithmetic, round-half-to-even, answer
+parsing, exactness of division and percentages at every level, monotonic
+difficulty, and a worked case for every diagnosis rule including the one that must
+report no pattern.
+
+One thing the adaptive version does *not* do: reproduce a session. Difficulty depends on
+your answers, so two runs from the same seed diverge the moment your timings
+differ. `index.html` remains the version to use when you want two sessions on
+identical questions.
+
+## Two fixed-difficulty implementations
 
 `index.html` is the web version: one self-contained file, no build step, no
 framework, no external requests, no backend. Open it in a browser, or use the
